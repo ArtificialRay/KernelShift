@@ -85,6 +85,11 @@ class LlamaCppAdapter(FrameworkAdapter):
     def report(self, ctx: E2EContext, opts: Options) -> str:
         """Throughput, speedup and perplexity of the measured builds, as one table."""
         from .report import render_report
+        if not ctx.run.results.exists():
+            raise StepFailed(
+                f"no {ctx.run.results}: the measure step has to run on the instance first. From the repo "
+                f"checkout there run\n  {self.box_command('evaluate', 'measure', ctx)}\n"
+                "then run the report step there, or copy the file back to this path")
         text = render_report(ctx.run.results, opts.baseline)
         print(text)
         return text

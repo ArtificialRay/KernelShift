@@ -92,7 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
     cal.add_argument("--baseline-author", required=True, help="the solution the evaluator scores speedup against")
     cal.add_argument("--definitions", nargs="*", default=[])
     cal.add_argument("--tag", help="also every definition carrying this tag, e.g. e2e:qwen3.5-4b "
-                                   "(with neither --definitions nor --tag: every correctness:sqnr definition)")
+                                   "(--definitions, --tag or both are required: there is no default selection)")
     cal.add_argument("--root", type=Path, default=REPO / "bench-trace")
     cal.add_argument("--dry-run", action="store_true")
     auto = commands.add_parser("autovec", help="time the baseline against the autovectorized scalar starting point (aarch64)")

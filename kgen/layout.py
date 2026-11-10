@@ -19,9 +19,10 @@ def workload_path(root: Path, definition) -> Path:
 
 
 def solution_path(root: Path, definition, solution) -> Path:
-    """solutions/<dataset>/<author>/<op_type>/<definition>.json; simd-loop nests one more level
-    (<author>/<loop>/<author>_<loop>.json)."""
-    base = root / "solutions" / solution.dataset.value / solution.author / definition_dir(definition)
+    """solutions/<dataset>/<author>/<op_type>/<definition>.json; simd-loop uses the loop's own directory, not
+    the shared definitions/ one, and the solution's name (<author>/<loop>/<author>_<loop>.json), which is where
+    TraceSet and `kgen check` look for it."""
+    base = root / "solutions" / solution.dataset.value / solution.author
     if solution.dataset.value == "simd-loop":
         return base / definition.name / f"{solution.name}.json"
-    return base / f"{definition.name}.json"
+    return base / definition_dir(definition) / f"{definition.name}.json"
