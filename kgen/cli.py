@@ -1,6 +1,6 @@
 """One entry point for generating kernel material into bench-trace.
 
-  python -m kgen add definition <file> | workload <file> --definition <name> | solution <file> [--replace]
+  python -m kgen add [--replace] definition <file> | workload <file> --definition <name> | solution <file>
   python -m kgen check <definition> [--static-only] [--num-selected-workloads N] [--isa sve2]
   python -m kgen show <definition> [--full]
   python -m kgen discover <plugin.py> [--out inventory.json] [-- plugin arguments]

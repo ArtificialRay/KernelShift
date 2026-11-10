@@ -30,7 +30,7 @@ there wins over the file it overrides.
 |---|---|
 | `config/kernel_contracts.yaml` | Kernel evaluation parameters: op-type correctness/timing overrides, disallowed source patterns, ISA→march mapping, baseline authors |
 | `config/dataset_builds.json` | Step-by-step clone/build of each dataset's native lib (ncnn, ggml) on a remote instance, plus the pinned llama.cpp tools tree for the end-to-end runs |
-| `config/e2e_models.json` | Models for the end-to-end tokens/s runs (`scripts/e2e/`) |
+| `config/e2e_models.json` | Models for the end-to-end tokens/s runs (`python -m e2e`, see `e2e/README.md`) |
 | `config/rsync_allowlist.json` | Repo paths synced to instances before a session (override once with `RSYNC_ALLOWLIST` in `.env`) |
 
 ## 3. Written by the tools (do not edit by hand)
@@ -45,8 +45,10 @@ there wins over the file it overrides.
 
 - **Python environment:** every instance (Graviton and Mac alike) runs `bench/`
   and `mcp_app/` from one uv-managed venv at `~/venv`, built from
-  `requirements.txt` by `provision.py`. Nothing to set up by hand, and a reused
-  instance is checked (and repaired if a package is missing) before a run.
+  `requirements.txt` by `provision.py`. Nothing to set up by hand. Only a fresh
+  instance gets this install; a reused one is not checked, so after
+  `requirements.txt` changes, tear it down (`provision.py --teardown --label <label>`)
+  and let the next run provision a new one.
 - **Linux boxes that `bench_fleet.py` drives shut themselves down when it stops.**
   It keeps a shutdown scheduled `--watchdog-minutes` (default 120) ahead while
   baselines are collected and during every job.
@@ -58,7 +60,8 @@ there wins over the file it overrides.
 - **Mac (`mac-m4.metal`) needs a Dedicated Host.** Provisioning picks an
   existing `available` host with no instance on it and never allocates one
   itself (AWS bills a 24-hour minimum). Allocate one first:
-  `aws ec2 allocate-hosts --instance-type mac-m4.metal --availability-zone <az> --quantity 1`.
+  `aws ec2 allocate-hosts --region <aws_region> --instance-type mac-m4.metal --availability-zone <az> --quantity 1`,
+  in an availability zone that has a default subnet (the instance is placed in it).
   A host that just lost its instance stays `pending` for a while while AWS
   scrubs it.
 
@@ -73,6 +76,8 @@ Only needed in specific cases, set in `.env` or the shell.
 | `ARMBENCH_CC_JOB_ROOT` | Parent of the per-job working directories `--harness claude-code` creates (default: the system temp dir); must be outside this repo |
 | `WANDB_INSTANCE_TYPE` | Label recorded on runs logged with `--wandb` |
 | `NANOBOT_CONFIG_BASE` | set your own nanobot config address if `--harness nanobot` |
+| `OPENAI_API_KEY`, `OPENAI_API_BASE` (or `OPENAI_BASE_URL`) | Override the key and endpoint in the codex / cline `config.json` |
+| `TF_VAR_ssh_key_files` | Per-label SSH private key as JSON, e.g. `{"ncnn-sme2": "~/.ssh/mac-m4-key.pem"}` (default `~/.ssh/id_rsa`); Terraform imports the `.pub` next to it as that label's key pair |
 
 ## Timing protocol
 
