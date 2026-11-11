@@ -80,14 +80,30 @@ extern "C" int armbench_entry_gemm_rows(const uint16_t* A, float* output, const 
 """
 
 
+# Every row range the override's N-split hands to armbench_entry_gemm_rows is a multiple of this many
+# rows (ARMBENCH_N_CHUNK in override/armbench_override.c; 128 when M > 1).
+ROWS_GRANULE = 64
+
+
 def kernel_rows_abi_text(src: str) -> str:
-    """The kernel.cpp rewrite the rows ABI needs: mutable static scratch becomes
-    thread_local, because the override hands each ggml thread its own row range
-    (const lookup tables are left alone).  Idempotent, so it doubles as the
-    normaliser the --expect-* guards compare sources through."""
+    """The kernel.cpp rewrite the rows ABI needs. The override calls the kernel from every ggml
+    thread at once, each with its own row range, so:
+      - mutable static state becomes thread_local: scratch vectors, arrays, and scalars or
+        pointers such as a lazily grown `static void* buf; static size_t cap;` (const lookup
+        tables are left alone);
+      - `static_assert(N % d == 0)` checks N_FULL instead of the runtime N when every row range
+        the override hands out is a multiple of d (ROWS_GRANULE); otherwise it would not compile
+        and the kernel would silently fall back to the single-thread entry.
+    Idempotent, so it doubles as the normaliser the --expect-* guards compare sources through."""
     src = re.sub(r"\bstatic\s+std::vector", "static thread_local std::vector", src)
     src = re.sub(r"\bstatic\s+(?!const\b|constexpr\b|inline\b|thread_local\b)((?:[A-Za-z_][A-Za-z0-9_:<>]*\s+)+)([A-Za-z_][A-Za-z0-9_]*\s*\[)",
                  r"static thread_local \1\2", src)
+    # scalars and pointers: a name followed by `=` or `;` (function declarations have `(` there)
+    src = re.sub(r"\bstatic\s+(?!const\b|constexpr\b|inline\b|thread_local\b)((?:[A-Za-z_][\w:<>,]*[\s*&]+)+)([A-Za-z_]\w*\s*(?:=|;))",
+                 r"static thread_local \1\2", src)
+    src = re.sub(r"static_assert\(\s*N\s*%\s*(\d+)\s*==\s*0",
+                 lambda m: m.group(0).replace("N", "N_FULL", 1) if ROWS_GRANULE % int(m.group(1)) == 0 else m.group(0),
+                 src)
     return src
 
 
