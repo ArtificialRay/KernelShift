@@ -55,15 +55,24 @@ def _system_mounts() -> list[str]:
     return args
 
 
+def _bwrap() -> str:
+    """Absolute path of bwrap, resolved on this process's PATH. The sandboxed child gets a
+    minimal PATH (runtime bins + /usr/local/bin:/usr/bin:/bin), so a bare "bwrap" would not be
+    found there when it is installed elsewhere (e.g. ~/.local/bin)."""
+    path = shutil.which("bwrap")
+    if path is None:
+        raise RuntimeError("--file-sandbox bwrap requires bubblewrap (bwrap) on PATH")
+    return path
+
+
 def check_file_sandbox(runtime_paths: tuple[Path, ...]) -> None:
     if sys.platform != "linux":
         raise RuntimeError("--file-sandbox bwrap requires Linux")
-    if shutil.which("bwrap") is None:
-        raise RuntimeError("--file-sandbox bwrap requires bubblewrap (bwrap) on PATH")
+    bwrap = _bwrap()
     for path in runtime_paths:
         _outside_repo(path)
     probe = subprocess.run(
-        ["bwrap", *_system_mounts(), "--proc", "/proc", "--dev", "/dev",
+        [bwrap, *_system_mounts(), "--proc", "/proc", "--dev", "/dev",
          "--", "/usr/bin/true"],
         capture_output=True, text=True,
     )
@@ -83,7 +92,7 @@ def sandboxed_command(
         raise RuntimeError(f"Agent CLI not found on PATH: {cmd[0]}")
     executable_path = _outside_repo(Path(executable))
     mounts = [
-        "bwrap", "--unshare-pid", "--new-session", "--die-with-parent",
+        _bwrap(), "--unshare-pid", "--new-session", "--die-with-parent",
         *_system_mounts(), "--proc", "/proc", "--dev", "/dev",
         "--tmpfs", "/tmp", "--dir", "/home",
     ]
