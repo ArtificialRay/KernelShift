@@ -41,6 +41,7 @@ class SimdLoopContext:
     _arrays:    list          # all live arrays (inputs + scratch + res_buf for inplace)
     res_buf:    np.ndarray    # result buffer: scalar (1-elem), array (N-elem), or inplace ref
     _n:         int = 0       # user-visible output length; 0 → use full res_buf
+    pristine:   Optional[np.ndarray] = None  # in-place loops: the input as generated
 
 
 class SimdLoopDataset:
@@ -122,7 +123,7 @@ class SimdLoopDataset:
                 + (ctypes.cast(dummy.ctypes.data, _C_VOID_P),)
             )
             return SimdLoopContext(entry_args=entry_args, _arrays=all_arrs + [dummy],
-                                   res_buf=data_arr, _n=0)
+                                   res_buf=data_arr, _n=0, pristine=data_arr.copy())
 
         arrays = [np.ascontiguousarray(np_inputs[name]) for name in definition.inputs]
         n = int(arrays[0].shape[0])
@@ -145,6 +146,13 @@ class SimdLoopDataset:
         if ctx._n > 0 and len(arr) > ctx._n:
             arr = arr[:ctx._n]
         return arr
+
+    def reset_inputs(self, ctx: SimdLoopContext) -> bool:
+        """Undo an in-place kernel's write to its input; False when the loop has none."""
+        if ctx.pristine is None:
+            return False
+        np.copyto(ctx.res_buf, ctx.pristine)
+        return True
 
     def release(self, ctx: SimdLoopContext) -> None:
         ctx._arrays.clear()
