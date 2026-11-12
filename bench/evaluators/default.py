@@ -177,7 +177,14 @@ class DefaultEvaluator(Evaluator):
             )
 
         invoke = lambda: kernel.invoke(ctx)  # noqa: E731
-        inner_iters = cfg.inner_iters
+        # In-place kernels would otherwise re-process their own output on every call after the first.
+        in_place = kernel.reset_inputs(ctx)
+        before_call = (lambda: kernel.reset_inputs(ctx)) if in_place else None
+        inner_iters = 1 if in_place else cfg.inner_iters
+        if in_place and ref_inner_iters not in (None, 1):
+            # shortcut: a baseline timed before inputs were restored has inner_iters > 1; one that ran
+            # at 1 by chance still passes this check, so recollect in-place baselines after this change.
+            ref_cycles = ref_min_ns = None
         if inner_iters == "auto":
             # A candidate repeats the kernel as often per sample as its
             # baseline did; only a baseline (or a candidate without one) probes.
@@ -191,9 +198,17 @@ class DefaultEvaluator(Evaluator):
                 warmup=cfg.warmup, repeat=cfg.repeat, inner_iters=inner_iters,
                 cpu=cfg.cpu, watchdog_s=cfg.watchdog_s,
                 collect_perf_counters=cfg.collect_perf_counters,
+                before_call=before_call,
             )
         except WatchdogTimeout as e:
             return None, _error(EvaluationStatus.TIMEOUT, env, timestamp, str(e))
+
+        if in_place:
+            # Check once more after timing, so a kernel that only works on its first call is caught.
+            kernel.reset_inputs(ctx)
+            _, ev = cls.check_correctness(definition, kernel, ctx, baseline, cfg, env, timestamp)
+            if ev is not None:
+                return None, ev
 
         if ref_cycles is not None and timing.cycles and timing.cycles > 0:
             cycle_speedup = ref_cycles / timing.cycles
