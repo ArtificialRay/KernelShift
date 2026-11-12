@@ -15,8 +15,9 @@ submitted, or a hand-written / reference-scalar set. Each solution carries its o
                "embeddable":true, "definition":..., "version":...}],
    "skipped":[{"definition":..., "embeddable":false, "reason":...}, ...]}
 
-The hook reads op/type/K/N/so/symbol/abi/symbol_rows/threads and skips every other key, so the
-extra fields here (framework, embeddable, ...) are for the people and tools reading the manifest.
+The hook reads op/type/K/N/so/symbol/abi/symbol_rows/threads/row_multiple and skips every other
+key, so the extra fields here (framework, embeddable, ...) are for the people and tools reading the
+manifest. "row_multiple" is only written for an entry_rows kernel that needs it (kernel_row_multiple).
 
 Only definitions named gemm_ggml_<type>_n<N>_k<K> are spliceable (packed ABI); others are
 listed under "skipped" with a reason, as is a kernel that calls ggml's own routines.
@@ -41,6 +42,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import sys
 from dataclasses import dataclass
@@ -84,6 +86,38 @@ extern "C" int armbench_entry_gemm_rows(const uint16_t* A, float* output, const 
 # rows (ARMBENCH_N_CHUNK in override/armbench_override.c; 128 when M > 1).
 ROWS_GRANULE = 64
 
+# static_assert(N % d == 0 ...), d an integer literal or a name
+N_ASSERT_RX = re.compile(r"static_assert\(\s*N\s*%\s*(\d+|[A-Za-z_]\w*)\s*==\s*0")
+# constexpr <type> NAME = <integer literal>;   (e.g. `constexpr int NCR = 128;`)
+CONSTEXPR_INT_RX = re.compile(r"\bconstexpr\s+(?:[A-Za-z_][\w:]*\s+)+([A-Za-z_]\w*)\s*=\s*(\d+)[uUlL]*\s*;")
+
+
+def n_divisor(src: str, d: str) -> int | None:
+    """The value of divisor `d` in a `static_assert(N % d == 0)` of `src`: a literal, or a name
+    with a single `constexpr` integer value in the source. None if it cannot be told for sure
+    (no or several definitions, an expression, a macro, 0)."""
+    if d.isdigit():
+        v = int(d)
+    else:
+        vals = {int(m.group(2)) for m in CONSTEXPR_INT_RX.finditer(src) if m.group(1) == d}
+        if len(vals) != 1:
+            return None
+        v = vals.pop()
+    return v or None
+
+
+def kernel_row_multiple(src: str) -> int:
+    """The rows each N-split range must be a multiple of for kernel.cpp `src` to hold its own
+    `static_assert(N % d == 0)`s: the lcm of those d (literal or named, see n_divisor). The
+    manifest records it as "row_multiple" when the override's own granularity (ROWS_GRANULE)
+    does not already guarantee it, and the override then rounds this kernel's ranges to it."""
+    r = 1
+    for m in N_ASSERT_RX.finditer(src):
+        v = n_divisor(src, m.group(1))
+        if v:
+            r = math.lcm(r, v)
+    return r
+
 
 def kernel_rows_abi_text(src: str) -> str:
     """The kernel.cpp rewrite the rows ABI needs. The override calls the kernel from every ggml
@@ -91,9 +125,12 @@ def kernel_rows_abi_text(src: str) -> str:
       - mutable static state becomes thread_local: scratch vectors, arrays, and scalars or
         pointers such as a lazily grown `static void* buf; static size_t cap;` (const lookup
         tables are left alone);
-      - `static_assert(N % d == 0)` checks N_FULL instead of the runtime N when every row range
-        the override hands out is a multiple of d (ROWS_GRANULE); otherwise it would not compile
-        and the kernel would silently fall back to the single-thread entry.
+      - `static_assert(N % d == 0)` checks N_FULL instead of the runtime N, for an integer
+        literal d or a name d with one constexpr integer value (otherwise it would not compile
+        and the kernel would silently fall back to the single-thread entry). Every row range the
+        override hands out is then a multiple of d: of ROWS_GRANULE anyway, or of the kernel's
+        manifest "row_multiple" (kernel_row_multiple). A d whose value cannot be told is left
+        alone, so that kernel keeps the single-thread entry.
     Idempotent, so it doubles as the normaliser the --expect-* guards compare sources through."""
     src = re.sub(r"\bstatic\s+std::vector", "static thread_local std::vector", src)
     src = re.sub(r"\bstatic\s+(?!const\b|constexpr\b|inline\b|thread_local\b)((?:[A-Za-z_][A-Za-z0-9_:<>]*\s+)+)([A-Za-z_][A-Za-z0-9_]*\s*\[)",
@@ -101,22 +138,43 @@ def kernel_rows_abi_text(src: str) -> str:
     # scalars and pointers: a name followed by `=` or `;` (function declarations have `(` there)
     src = re.sub(r"\bstatic\s+(?!const\b|constexpr\b|inline\b|thread_local\b)((?:[A-Za-z_][\w:<>,]*[\s*&]+)+)([A-Za-z_]\w*\s*(?:=|;))",
                  r"static thread_local \1\2", src)
-    src = re.sub(r"static_assert\(\s*N\s*%\s*(\d+)\s*==\s*0",
-                 lambda m: m.group(0).replace("N", "N_FULL", 1) if ROWS_GRANULE % int(m.group(1)) == 0 else m.group(0),
-                 src)
+    src = N_ASSERT_RX.sub(lambda m: m.group(0).replace("N", "N_FULL", 1) if n_divisor(src, m.group(1)) else m.group(0),
+                          src)
     return src
 
 
-def rows_abi_sources(build: Path, N: int) -> None:
+def manifest_row_multiple(src: str) -> int:
+    """kernel_row_multiple(src) if the override has to round this kernel's row ranges to it,
+    else 1 (ROWS_GRANULE already is a multiple of it, the manifest entry gets no key)."""
+    r = kernel_row_multiple(src)
+    return 1 if ROWS_GRANULE % r == 0 else r
+
+
+def rt_gemm_cpp(row_multiple: int) -> str:
+    """RT_GEMM_CPP; for row_multiple > 1 the rows entry also refuses (returns 1, which the override
+    turns into an abort) a row count that is not a multiple of it, so an override that ignores the
+    manifest's "row_multiple" fails loudly instead of running the kernel on rows it rejects."""
+    if row_multiple == 1:
+        return RT_GEMM_CPP
+    old = "    gemm_def::N = n_rows;\n"
+    assert RT_GEMM_CPP.count(old) == 1
+    return RT_GEMM_CPP.replace(old, f"    if (n_rows % {row_multiple} != 0) return 1;  // manifest row_multiple\n" + old)
+
+
+def rows_abi_sources(build: Path, N: int) -> int:
     """Rewrite the materialized harness so N is a runtime thread_local (see RT_GEMM_CPP)
-    and make the kernel's static scratch buffers thread-local."""
+    and make the kernel's static scratch buffers thread-local. Returns the manifest
+    row_multiple (manifest_row_multiple)."""
     h = (build / "gemm.h").read_text()
     old = f"constexpr int N = {N};"
     assert old in h, "gemm.h layout changed; cannot rewrite N"
     h = h.replace(old, f"constexpr int N_FULL = {N};\nextern thread_local int N;   // runtime (rows-abi), == N_FULL unless the override splits rows")
     (build / "gemm.h").write_text(h)
-    (build / "gemm.cpp").write_text(RT_GEMM_CPP)
-    (build / "kernel.cpp").write_text(kernel_rows_abi_text((build / "kernel.cpp").read_text()))
+    src = (build / "kernel.cpp").read_text()
+    row_multiple = manifest_row_multiple(src)
+    (build / "gemm.cpp").write_text(rt_gemm_cpp(row_multiple))
+    (build / "kernel.cpp").write_text(kernel_rows_abi_text(src))
+    return row_multiple
 
 
 def undefined_ggml_symbols(so: Path) -> list:
@@ -172,9 +230,9 @@ def build_kernels(solutions: dict, author: str, out_dir: Path, march: str, *, on
                 (build / s["path"]).write_text(s["content"])
         materialize()
         so = out_dir / f"{name}.so"
-        abi = "entry"
+        abi, row_multiple = "entry", 1
         if rows_abi:
-            rows_abi_sources(build, N)
+            row_multiple = rows_abi_sources(build, N)
             p = compile_so(cxx, march, build, so)
             if p.returncode == 0:
                 abi = "entry_rows"
@@ -196,10 +254,12 @@ def build_kernels(solutions: dict, author: str, out_dir: Path, march: str, *, on
             })
             print(f"  {name}: SKIPPED -- calls ggml internals ({', '.join(bad)})")
             continue
-        kernels.append({"op": "mul_mat", "type": qtype, "K": K, "N": N, "so": str(so),
-                        "symbol": "armbench_entry_gemm", "abi": abi,
-                        "embeddable": True, "definition": name, "version": f"solutions/{author}"})
-        print(f"built {name} abi={abi}")
+        entry = {"op": "mul_mat", "type": qtype, "K": K, "N": N, "so": str(so),
+                 "symbol": "armbench_entry_gemm", "abi": abi}
+        if abi == "entry_rows" and row_multiple > 1:
+            entry["row_multiple"] = row_multiple
+        kernels.append({**entry, "embeddable": True, "definition": name, "version": f"solutions/{author}"})
+        print(f"built {name} abi={abi}" + (f" row_multiple={row_multiple}" if "row_multiple" in entry else ""))
     return kernels, skipped
 
 
