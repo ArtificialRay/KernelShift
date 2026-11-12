@@ -3,8 +3,8 @@
 The twin of kgen.capture: the same loader file (`load() -> (model, batches)` and `adapters()`, see kgen/capture.py)
 and the same hook pass, but only the sizes of each call are kept, not the data. For every selected definition it writes
 the distinct values of the definition's var axes that the matching layers saw, one `{"axes": {...}}` row each, to
-DIR/<definition>.jsonl. Those files are pools: `kgen add workload DIR/<d>.jsonl --definition <d> --max-count N
---batch-key AXIS --replace` picks N diverse rows from one (the rows may be given to another definition with the
+DIR/<definition>.jsonl. Those files are pools: `kgen add --replace workload DIR/<d>.jsonl --definition <d>
+--max-count N --batch-key AXIS` picks N diverse rows from one (the rows may be given to another definition with the
 same var axes: how many tokens a prompt has does not depend on the model).
 
     python -m kgen collect pytorch --loader load_shapes.py --definitions gemm_q4_K_n2048_k2048 --out-dir pools/

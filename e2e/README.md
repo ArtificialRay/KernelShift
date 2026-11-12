@@ -11,7 +11,7 @@ Two commands:
 
 ```
 python -m e2e prepare  --model qwen3.5-4b                    # once per model:  inventory -> calibrate
-python -m e2e evaluate --model qwen3.5-4b --author AUTHOR --label BOX --rows-abi
+python -m e2e evaluate --model qwen3.5-4b --author AUTHOR --label BOX --agent-build --rows-abi
                                                              # after each agent run:  kernel_set -> deploy -> measure -> report
 ```
 

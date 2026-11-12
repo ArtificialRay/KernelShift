@@ -17,7 +17,7 @@ kgen commands used here:
 | Command | Purpose |
 |---|---|
 | `kgen show <def> [--full]` | read a similar existing definition (axes, tensors, tags, constraints, reference with `--full`) before writing |
-| `kgen add definition FILE [--replace]` | lint FILE and write `bench-trace/definitions/<op_type>/<name>.json` |
+| `kgen add [--replace] definition FILE` | lint FILE and write `bench-trace/definitions/<op_type>/<name>.json` |
 | `kgen discover plugin.py [--out F] [-- args]` | frameworks only: list the operators a model uses (see Step 0) |
 | `kgen check <name> --static-only` | re-lint what is in the warehouse |
 
@@ -94,7 +94,7 @@ Write a `discover` plugin if you think you need it. Then run it:
 python -m kgen discover plugin.py [--out inventory.json] [-- plugin args]
 ```
 
-The plugin defines `discover(argv) -> dict` (read a GGUF header, trace a torchvision model, parse an ONNX graph, list a library's micro-kernels or loop sources ...). kgen only loads it and checks the result is a JSON object; what the dict holds is yours to decide. `e2e/adapters/llamacpp/inventory.py` is an example. Both a framework and a library may use a plugin; the criteria differ. Have the plugin apply them and report what it dropped and why.
+The plugin defines `discover(argv) -> dict` (read a GGUF header, trace a torchvision model, parse an ONNX graph, list a library's micro-kernels or loop sources ...). kgen only loads it and checks the result is a JSON object; what the dict holds is yours to decide. `plugins/llamacpp/plugin.py` and `plugins/simd_loop/plugin.py` are examples. A llama.cpp GGUF needs no plugin for this step: `python -m e2e prepare --model M --steps inventory` (M a key in `config/e2e_models.json`) reads its header and writes `e2e-runs/llamacpp-M-sve2/inventory.json`; then `python -m kgen discover plugins/llamacpp/plugin.py -- --inventory <that file> --model-tag M --out-dir DIR` writes the definitions, workloads and solutions to `kgen add`. Both a framework and a library may use a plugin; the criteria differ. Have the plugin apply them and report what it dropped and why.
 
 **Framework (operators come from a model)**; record the model as a `model:` tag:
 

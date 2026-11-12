@@ -61,7 +61,7 @@ SSH-tunneled `http://127.0.0.1:<port>/mcp` URL — the tunnel is managed by
   prompts); any explicit subset disables resources entirely. This skill
   needs `list_resources()`/`read_resource()` (reading reference kernels and
   your own earlier versions) — restricting to just
-  `compile`/`evaluate`/`disassemble`/`submit` would silently break that.
+  `check_progress`/`compile`/`evaluate`/`disassemble` would silently break that.
 - Config is process-wide — restart nanobot after editing it.
 
 ## 3. Start nanobot
