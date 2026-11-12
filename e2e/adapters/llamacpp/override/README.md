@@ -93,21 +93,21 @@ from its own thread-local bf16 scratch (`_Thread_local`, grown on demand), then 
 * `llamacpp` / `entry`: thread 0 runs the whole kernel; other threads return `true` immediately
   and wait at the node barrier. (Measured: 5.5 tok/s flat at 1/4/16 threads vs stock 36.6 at 16 —
   hence `entry_rows`.)
-* `entry_rows`, **M == 1 (decode)** — N-split: `chunk = ceil(N/nth/64)*64`; thread `i` handles
-  weight rows `[i*chunk, min(N,(i+1)*chunk))` and calls
-  `entry_gemm_rows(A_bf16, dst + r0, src0->data + r0*nb01, 1, n_i)` (`nb01 == ggml_row_size(type,K)`).
-  Because `dst` has a single row, `output[0*n_i + n]` lands at `dst[r0 + n]` — the `n_rows`
-  stride is exactly right. Each thread casts the one activation row to bf16 itself (K elements).
-  Threads with an empty range return.
-* `entry_rows`, **M >= 2 (prefill)** — M-split: `mpt = ceil(M/nth)`; thread `i` casts rows
+* `entry_rows`, **M < nth** (decode and small batches) — N-split: `chunk = ceil(N/nth)` rounded up
+  to a multiple of 64 rows (M == 1) or 128 rows (M > 1); thread `i` handles weight rows
+  `[i*chunk, min(N,(i+1)*chunk))` and calls `entry_gemm_rows(A_bf16, out, src0->data + r0*nb01, M, n_i)`.
+  For M == 1 `out` is `dst + r0` (the `n_rows` stride is exactly right); for M > 1 the thread
+  writes a staging buffer and copies each row into `dst`. Each thread casts the activation rows to
+  bf16 itself. Threads with an empty range return.
+* `entry_rows`, **M >= nth** (prefill) — M-split: `mpt = ceil(M/nth)`; thread `i` casts rows
   `[m0, m0+M_i)` and calls `entry_gemm(A + 0, dst + m0*N, src0->data, M_i)` with the full-N entry
   (output row stride N is correct there). Threads with no rows return.
 * `ARMBENCH_OVERRIDE_THREADS=1` forces the thread-0 path for all ABIs.
-* Remaining limitation: for `M` in `[2, nth)` only `M` threads do work (M-split cannot go below
-  one activation row per thread; an N-split for small M would need `entry_gemm_rows` with M>1
-  and stride `n_rows`, which the current dispatcher does not use). Batched decode with a handful
-  of sequences therefore under-utilises the cores; single-sequence decode (M=1) and real prefill
-  (M >= nth) are fully parallel.
+* What this asks of a kernel (the kernel-level benchmark never checks it, since it always passes the
+  full N and runs one thread): correct results for any `n_rows` that is a multiple of the
+  granularity, and no shared mutable state. `kernel_set --rows-abi` makes static state
+  `thread_local`; a kernel whose batched path only handles whole 128-row tiles needs the 128-row
+  granularity at M > 1 (`ARMBENCH_N_CHUNK_BATCH`).
 
 Op fusion: `ggml_cpu_try_fuse_ops` (ggml-cpu.c:3079) only fuses `RMS_NORM+MUL`; `MUL_MAT` is
 never fused, so the patched `case` is the sole path for plain-buffer matmuls.
