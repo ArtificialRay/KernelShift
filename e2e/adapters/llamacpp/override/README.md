@@ -48,6 +48,8 @@ ARMBENCH_OVERRIDES=/abs/manifest.json ARMBENCH_OVERRIDE_LOG=1 build/bin/llama-be
 
 Match key for `mul_mat` = (`type` = ggml type name of `src0`, e.g. `q4_K`; `K` = `ne00`; `N` = `ne01`).
 `threads` is parsed and stored but **reserved/unused** (the thread count comes from ggml's `nth`).
+`row_multiple` (optional, `entry_rows` only, default 1, must divide `N`): every N-split row range of this
+kernel is also a multiple of it (see Threading).
 `abi` selects the entry-point signature(s):
 
 | `abi` | signature | dispatch |
@@ -94,7 +96,8 @@ from its own thread-local bf16 scratch (`_Thread_local`, grown on demand), then 
   and wait at the node barrier. (Measured: 5.5 tok/s flat at 1/4/16 threads vs stock 36.6 at 16 —
   hence `entry_rows`.)
 * `entry_rows`, **M < nth** (decode and small batches) — N-split: `chunk = ceil(N/nth)` rounded up
-  to a multiple of 64 rows (M == 1) or 128 rows (M > 1); thread `i` handles weight rows
+  to a multiple of 64 rows (M == 1) or 128 rows (M > 1), or of the lcm of that and the kernel's
+  `row_multiple` when the manifest gives one; thread `i` handles weight rows
   `[i*chunk, min(N,(i+1)*chunk))` and calls `entry_gemm_rows(A_bf16, out, src0->data + r0*nb01, M, n_i)`.
   For M == 1 `out` is `dst + r0` (the `n_rows` stride is exactly right); for M > 1 the thread
   writes a staging buffer and copies each row into `dst`. Each thread casts the activation rows to
@@ -107,7 +110,11 @@ from its own thread-local bf16 scratch (`_Thread_local`, grown on demand), then 
   full N and runs one thread): correct results for any `n_rows` that is a multiple of the
   granularity, and no shared mutable state. `kernel_set --rows-abi` makes static state
   `thread_local`; a kernel whose batched path only handles whole 128-row tiles needs the 128-row
-  granularity at M > 1 (`ARMBENCH_N_CHUNK_BATCH`).
+  granularity at M > 1 (`ARMBENCH_N_CHUNK_BATCH`). A kernel's own `static_assert(N % d == 0)` (d a
+  literal or a `constexpr` integer) is checked against the full N, and when 64 is not a multiple of
+  d, `kernel_set` writes the lcm of those d as the kernel's `row_multiple`; its rows entry then
+  returns 1 (abort) for an `n_rows` that is not a multiple of it, so a hook that ignores the key fails
+  loudly.
 
 Op fusion: `ggml_cpu_try_fuse_ops` (ggml-cpu.c:3079) only fuses `RMS_NORM+MUL`; `MUL_MAT` is
 never fused, so the patched `case` is the sole path for plain-buffer matmuls.

@@ -26,9 +26,11 @@
 // params->ith / params->nth; the graph loop barriers after every node, so the
 // override is barrier-free. "llamacpp"/"entry" kernels run on thread 0 only (the
 // others return true immediately). "entry_rows" kernels are dispatched on all
-// threads: M==1 (decode) splits N in 64-row chunks via entry_gemm_rows; M>=2
-// (prefill) splits M via entry_gemm. ARMBENCH_OVERRIDE_THREADS=1 forces the
-// thread-0-only path for every ABI. The manifest field "threads" is reserved.
+// threads: M<nth (decode, small batches) splits N via entry_gemm_rows in chunks of
+// 64 rows (M==1) or 128 rows (M>1), rounded to the kernel's manifest "row_multiple"
+// too when it has one; M>=nth (prefill) splits M via entry_gemm.
+// ARMBENCH_OVERRIDE_THREADS=1 forces the thread-0-only path for every ABI. The
+// manifest field "threads" is reserved.
 #pragma once
 
 #include <stdbool.h>
