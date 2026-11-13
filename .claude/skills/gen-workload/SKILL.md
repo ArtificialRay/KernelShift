@@ -134,6 +134,12 @@ python -m kgen calibrate --author reference-scalar --baseline-author <baseline a
 ```
 
 - Records `baseline_sqnr_db` on each workload: what the baseline scores on exactly those inputs.
+- `--author` is the solution whose SQNR becomes the floor, so it must do the baseline's own quantization
+  arithmetic. `reference-scalar` qualifies only where it is a scalar port of the baseline's arithmetic
+  (llama.cpp and e2e: ggml's `vec_dot`). Where it computes in float32 (KleidiAI: it dequantizes the
+  weights and does not quantize the activations), pass the baseline author itself
+  (`--author baseline-kleidiai-arm --baseline-author baseline-kleidiai-arm`). When unsure, use what the
+  dataset's existing workloads record in `baseline_sqnr_author`.
 - Recalibrate before trusting `check` whenever the floors may be stale.
 - Authors per dataset are in `config/kernel_contracts.yaml`.
 
@@ -174,4 +180,5 @@ python -m kgen check <D> --num-selected-workloads 5     # on aarch64: runs refer
 | `an adapter failed on layer ...` | Exception inside the loader's `match/params/named` | Fix the adapter; the message names the layer |
 | `inputs.A file has dtype ...` | `.npy` dtype cannot be loaded as the declared one | bf16/fp16 are stored as 2-byte patterns or float32; others must cast safely |
 | `check` fails on `baseline_sqnr_db` after editing workloads | Floors measured on the old inputs | Re-run `calibrate` |
+| `check` fails the baseline itself on SQNR (e.g. `SQNR=48 dB < 124.5 dB`) right after `calibrate` | `--author` was a float32 reference-scalar, so the floor is float32 accuracy | Re-run `calibrate` with `--author` = the baseline author |
 | ncnn `N=1 only` error | Workload has N>1 for an ncnn-backed definition | Use N=1 |
