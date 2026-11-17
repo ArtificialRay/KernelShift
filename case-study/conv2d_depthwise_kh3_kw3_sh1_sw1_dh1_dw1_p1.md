@@ -82,7 +82,7 @@ Despite the efficient pack4 NEON kernel, the **benchmark harness wrapper** surro
 
 ### Pack/unpack overhead
 
-The baseline kernel (`bench-trace/solutions/ncnn/baseline-ncnn-arm/conv2d_depthwise/conv2d_depthwise_kh3_kw3_sh1_sw1_dh1_dw1_p1.json`, `kernel.cpp`) executes this sequence on every benchmark call:
+The baseline kernel (`bench-trace/solutions/ncnn/baseline-ncnn/conv2d_depthwise/conv2d_depthwise_kh3_kw3_sh1_sw1_dh1_dw1_p1.json`, `kernel.cpp`) executes this sequence on every benchmark call:
 
 ```cpp
 // Step 1: CHW → pack4 format (full tensor read + write)

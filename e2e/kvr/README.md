@@ -12,7 +12,7 @@ this for several M, the number of input rows: M = 1 is like generating one token
   a layout its fast code reads well (`repack.cpp`; on Graviton4 the i8mm `8x8` kernels). Stock `llama-bench`
   uses this.
 - **norepack**: the same ggml call, but the weights stay in their normal layout, so ggml uses its plain code.
-  The norepack build uses this, and so does the `baseline-llamacpp-arm` baseline.
+  The norepack build uses this, and so does the `baseline-llamacpp` baseline.
 - **agent**: the agent's `.so`, called exactly like the hook in `e2e/override` calls it. First the input is
   converted from f32 to bf16 (`ggml_cpu_fp32_to_bf16`), then the kernel computes the `[M,N]` result. The
   conversion is counted in the agent's time.
@@ -70,7 +70,7 @@ By hand, on the box:
 
 # one shape
 ./bench_repack --type q4_K --N 2560 --K 9216 --M 1,2,4,8,16,32,128,512 \
-    --so gemm_ggml_q4_K_n2560_k9216.so --symbol armbench_entry_gemm --abi entry_rows
+    --so gemm_ggml_q4_K_n2560_k9216.so --symbol kernelshift_entry_gemm --abi entry_rows
 
 # every kernel of a manifest: one line per shape and M, plus a summary table on stderr
 ./run_all.sh manifest.json kvr.jsonl

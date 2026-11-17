@@ -31,7 +31,7 @@ Checks (every one asserts; the script exits non-zero on the first failure):
      even for the existing bench-trace Q4_K kernel (matched ~0.86 at ~50 dB).
      A stricter 35 dB sanity floor is also asserted: a bit-placement bug
      lands below ~15 dB, Q8_K noise alone sits at 45-52 dB.
-  D. baseline-llamacpp-arm kernels (same shapes/layouts) compiled against the
+  D. baseline-llamacpp kernels (same shapes/layouts) compiled against the
      ggml static libs, driven through LlamaCppDataset.wrap_inputs (so the
      Q5_K/Q6_K triplet detection and the packed uint8 pass-through are
      exercised) vs the numpy reference, same gate.
@@ -310,7 +310,7 @@ def test_reference_scalar(qt: str, layout: str, rng: np.random.Generator) -> Non
     names = [n for n in d.inputs if n != "A"]
     bufs = [np.ascontiguousarray(inputs[n]) for n in names]
     A = np.ascontiguousarray(inputs["A"])
-    fn = lib.armbench_entry_gemm
+    fn = lib.kernelshift_entry_gemm
     fn.restype = ctypes.c_int
     fn.argtypes = [ctypes.c_void_p, ctypes.c_void_p] + [ctypes.c_void_p] * len(bufs) + [ctypes.c_int]
     rc = fn(A.ctypes.data, out.ctypes.data, *[b.ctypes.data for b in bufs], M)
@@ -321,12 +321,12 @@ def test_reference_scalar(qt: str, layout: str, rng: np.random.Generator) -> Non
 def test_baseline(qt: str, layout: str, rng: np.random.Generator) -> None:
     d, inputs, ref = make_case(qt, layout, rng)
     srcdir = write_sources(f"bl_{qt}_{layout}", kt.baseline_sources(qt, N, K, layout))
-    spec = kt.spec(qt, "baseline-llamacpp-arm")
+    spec = kt.spec(qt, "baseline-llamacpp")
     lib = compile_shared(
         srcdir / f"lib{DYLIB_EXT}", [srcdir / "binding.cpp", srcdir / "kernel.cpp"],
         flags=[*spec["compile_flags"], f"-I{GGML_INC}"], link=[*GGML_LIBS, "-lpthread"],
     )
-    fn = lib.armbench_entry_gemm
+    fn = lib.kernelshift_entry_gemm
     fn.restype = ctypes.c_int
     fn.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
     ds = LlamaCppDataset()
@@ -341,7 +341,7 @@ def test_baseline(qt: str, layout: str, rng: np.random.Generator) -> None:
     assert rc == 0
     out = ds.unwrap_output(ctx).copy()
     ds.release(ctx)
-    assert_gemm(f"D. baseline-llamacpp-arm {qt}/{layout} ({d.name})", out, ref)
+    assert_gemm(f"D. baseline-llamacpp {qt}/{layout} ({d.name})", out, ref)
 
 
 # ─── E: templating regression ────────────────────────────────────────────────

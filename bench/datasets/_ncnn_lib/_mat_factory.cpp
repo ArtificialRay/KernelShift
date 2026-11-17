@@ -1,5 +1,5 @@
 // Python ↔ ncnn::Mat bridge. NcnnBuilder compiles this source into every ncnn
-// baseline .so, so Python (via ctypes) and the armbench_entry_*
+// baseline .so, so Python (via ctypes) and the kernelshift_entry_*
 // shim (C++) operate on the same ncnn::Mat ABI — no cross-.so vtable risk.
 //
 // Layout convention: 3D Mat is (c, h, w). 1D Mat is (w,). Float32 by default;
@@ -104,7 +104,7 @@ void* armbench_ncnn_mat_create_1d_i8(int w, const int8_t* data)
 }
 
 // Create an empty Mat (no allocation). Used for output blob — the solution's
-// armbench_entry_<op> calls .create() on it once output dims are known.
+// kernelshift_entry_<op> calls .create() on it once output dims are known.
 void* armbench_ncnn_mat_create_empty()
 {
     return new ncnn::Mat();

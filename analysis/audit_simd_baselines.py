@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Audit every simd-loop baseline-sve solution on this box at the sve tier.
+"""Audit every baseline-simd-loop-sve solution on this box at the sve tier.
 
-For each simd-loop definition: does a baseline-sve solution exist, does it
+For each simd-loop definition: does a baseline-simd-loop-sve solution exist, does it
 compile (with its own flags, then with extra -march variants to
 classify SVE2-only / matrix-extension kernels), does the Python reference run,
 and does the compiled baseline pass correctness against the reference.
@@ -36,8 +36,8 @@ def build_with(sol: Solution, d: Definition, march: str | None):
 def main():
     import argparse
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--author", default="baseline-sve",
-                    help="baseline author to audit (baseline-sve on a Graviton3, baseline-sve2 on a Graviton4)")
+    ap.add_argument("--author", default="baseline-simd-loop-sve",
+                    help="baseline author to audit (baseline-simd-loop-sve on a Graviton3, baseline-simd-loop-sve2 on a Graviton4)")
     ap.add_argument("loops", nargs="*", help="optional loop ids to restrict to (e.g. 038 loop_109)")
     args = ap.parse_args()
     author = args.author

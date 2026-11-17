@@ -8,7 +8,7 @@ correctness + performance protocol.
 Responsibilities here (per-solution, around the evaluator):
   - compile once (BuilderRegistry), fan a COMPILE_ERROR trace to every workload
     on failure;
-  - dlopen + bind `armbench_entry_<op>` + pick the dataset adapter → `BoundKernel`;
+  - dlopen + bind `kernelshift_entry_<op>` + pick the dataset adapter → `BoundKernel`;
   - exec the Definition.reference → `ref_run`;
   - snapshot the Environment; wrap each evaluator result into a Trace.
 
@@ -243,12 +243,12 @@ def _eval_error(status: EvaluationStatus, env: Environment, ts: str, log: str) -
 
 
 def _bind_entry(lib: ctypes.CDLL, op_type: str):
-    """Resolve armbench_entry_<op_type> from the dlopened .so.
+    """Resolve kernelshift_entry_<op_type> from the dlopened .so.
 
     Adapters construct fully-typed ctypes objects in entry_args, so no
     argtypes table is needed here.
     """
-    fn = getattr(lib, f"armbench_entry_{op_type}")
+    fn = getattr(lib, f"kernelshift_entry_{op_type}")
     fn.restype = ctypes.c_int
     # Stash the lib so adapters can bind their own symbols (e.g. mat_factory).
     fn._lib = lib  # type: ignore[attr-defined]

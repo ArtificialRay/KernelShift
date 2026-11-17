@@ -6,7 +6,7 @@ Differs from flashinfer-bench's Solution by adding CPU/AOT specifics:
 - spec.compile_flags / spec.link_flags (clang++ AOT specifics)
 
 Every Solution is self-contained: its `sources` include the
-`armbench_entry_<op_type>` binding, and the builders inject no shared harness.
+`kernelshift_entry_<op_type>` binding, and the builders inject no shared harness.
 """
 
 from __future__ import annotations
@@ -68,7 +68,7 @@ class SolutionSpec(BaseModelWithDocstrings):
     """E.g. ['graviton3', 'aarch64-sve']. Informational."""
     entry_point: NonEmptyString
     """`<source_file>::<C_symbol>`: the kernel symbol the solution's
-    `armbench_entry_<op_type>` binding calls into."""
+    `kernelshift_entry_<op_type>` binding calls into."""
     dependencies: List[NonEmptyString] = Field(default_factory=list)
     """E.g. ['ncnn', 'openmp']. Informational (part of the hash); builders do not read it."""
     isa_features: List[NonEmptyString] = Field(default_factory=list)

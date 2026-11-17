@@ -2,7 +2,7 @@
 framework-specific builder wants: all candidates, plus any dataset whose true
 baseline also has no framework dependency of its own (e.g. kleidiai — see
 SupportedDatasets.KLEIDIAI). Each solution embeds its own
-`armbench_entry_<op>` binding in its sources.
+`kernelshift_entry_<op>` binding in its sources.
 """
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Correctness check of the baseline-sme2 simd-loop solutions without SME hardware.
+"""Correctness check of the baseline-simd-loop-sme2 simd-loop solutions without SME hardware.
 
 No AWS instance type has SME, and the sme2 tier targets Apple M4. This runs the
 solutions on an emulated SME2 CPU instead: inside Linux aarch64 with clang and
@@ -36,12 +36,12 @@ from bench.data.trace import EvaluationStatus  # noqa: E402
 from bench.data.trace_set import TraceSet  # noqa: E402
 from bench.runner import _run_solution_on_workloads_direct  # noqa: E402
 
-AUTHOR = "baseline-sme2"
+AUTHOR = "baseline-simd-loop-sme2"
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("loops", nargs="*", help="loop ids (default: every baseline-sme2 solution)")
+    ap.add_argument("loops", nargs="*", help="loop ids (default: every baseline-simd-loop-sme2 solution)")
     ap.add_argument("--max-elems", type=int, default=13_000_000,
                     help="skip workloads whose largest input has more elements than this")
     args = ap.parse_args()

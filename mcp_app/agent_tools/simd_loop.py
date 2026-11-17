@@ -8,7 +8,7 @@ loop kernel — not the harness boilerplate.
 
 Same contract shape as the ncnn dataset (`inner_<op_type>` behind a fused
 harness); the differences are the dataset enum, the baseline author to lift
-the harness from (typically "reference", the scalar baseline).
+the harness from (typically "reference-scalar", the scalar baseline).
 """
 
 from __future__ import annotations

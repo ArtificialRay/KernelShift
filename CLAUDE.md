@@ -55,11 +55,11 @@ based on `is_baseline` (whether `solution.author == baseline_author`):
 
 - **`CandidateBuilder`** (`bench/compile/builders/candidate.py`): the raw `float*`
   ABI path for ALL non-baseline solutions. No ncnn dependency. The solution's
-  own sources define `armbench_entry_<op>` — the only shared code is what ships
+  own sources define `kernelshift_entry_<op>` — the only shared code is what ships
   in the solution JSON. Uses `-O3 -march=armv8.2-a+sve -std=c++14` for SVE.
 - **`NcnnBuilder`** (`bench/compile/builders/ncnn.py`): baseline-only for ncnn
   dataset. Links against real `libncnn.a` from `ncnn/build/src/`. Each baseline
-  solution ships its own `binding.cpp` (defines `armbench_entry_<op>` with
+  solution ships its own `binding.cpp` (defines `kernelshift_entry_<op>` with
   constexpr-baked params and `ncnn::Mat`/`Option` shim) + `kernel.cpp` (delegates
   to ncnn's kernel layer) + a contract header.
 - **`SimdLoopBuilder`** / **`LlamaCppBuilder`**: dataset-specific paths for simd-loop
@@ -81,7 +81,7 @@ void inner_conv2d_depthwise(
     int N, int C, int H, int W, int H_out, int W_out);
 
 // binding.cpp (in solution JSON) computes H_out/W_out and calls inner_...:
-int armbench_entry_conv2d_depthwise(
+int kernelshift_entry_conv2d_depthwise(
     const float* input, float* output,
     const float* weight, const float* bias,
     int N, int C, int H, int W);
@@ -104,7 +104,7 @@ Key constraints for candidate kernels:
 runner/server down. The subprocess:
 
 1. Compiles via `BuilderRegistry` → `.so`
-2. Dlopens and binds `armbench_entry_<op>` via ctypes
+2. Dlopens and binds `kernelshift_entry_<op>` via ctypes
 3. Iterates workloads: for each, calls `bench/evaluators/default.py::DefaultEvaluator`
    which runs correctness (hybrid abs+rel tolerance AND comparison) + timing
    (CPU-pinned via `os.sched_setaffinity`, hardware perf counters via
@@ -310,7 +310,7 @@ The speedup baseline is taken from the run's dataset (`contracts.baseline_author
 pass `--isa` where a dataset has one baseline per tier (simd-loop), or `--baseline-author` to override.
 ```bash
 python -m bench.cli list-definitions          # list all definitions
-python -m bench.cli bench --definition loop_001 --solution reference_loop_001 --dataset simd-loop --isa sve
+python -m bench.cli bench --definition loop_001 --solution reference-scalar_loop_001 --dataset simd-loop --isa sve
 python -m bench.cli bench --definition conv2d_depthwise_fp32_kh5_kw5_sh2_sw2_dh1_dw1_p2 \
   --solution reference-scalar_conv2d_depthwise_fp32_kh5_kw5_sh2_sw2_dh1_dw1_p2 --dataset ncnn
 
@@ -344,7 +344,7 @@ python3 -m kgen autovec --isa sve --tag simd-loop
 # MCP server over SSH stdio (connect Claude Code MCP config to it)
 python3 -m mcp_app.server --dataset ncnn --author claude-code --isa sve \
   --run-dir ~/arm-bench/agent-runs-mcp/claude-code --transport stdio \
-  --baseline-author baseline-ncnn-arm
+  --baseline-author baseline-ncnn
 
 # Launch session (skills/launch/)
 python3 launch_session.py launch --isa sve --dataset ncnn

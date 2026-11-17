@@ -9,13 +9,13 @@
 // If ARMBENCH_OVERRIDES is unset the hook costs one static-bool check per op.
 //
 // Kernel ABIs (manifest field "abi", per kernel):
-//   "llamacpp" (default): int armbench_llamacpp_gemm(const void* A, const void* B, float* C,
+//   "llamacpp" (default): int kernelshift_llamacpp_gemm(const void* A, const void* B, float* C,
 //                                                     int64_t M, int64_t N, int64_t K)
-//   "entry":              int armbench_entry_gemm(const uint16_t* A_bf16, float* output,
+//   "entry":              int kernelshift_entry_gemm(const uint16_t* A_bf16, float* output,
 //                                                  const uint8_t* B_blocks, int M)
 //                         (N and K baked into the kernel; must equal the manifest's N/K)
 //   "entry_rows":         the .so exports the "entry" symbol AND
-//                         int armbench_entry_gemm_rows(const uint16_t* A_bf16, float* output,
+//                         int kernelshift_entry_gemm_rows(const uint16_t* A_bf16, float* output,
 //                                                       const uint8_t* B_blocks, int M, int n_rows)
 //                         computing weight rows [0,n_rows) relative to B_blocks with output row
 //                         stride n_rows. Only this ABI is dispatched multithreaded (see below).

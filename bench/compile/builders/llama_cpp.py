@@ -3,7 +3,7 @@
 Builds, against a real llama.cpp checkout's ggml static libs:
 
   - the solution's own sources — kernel.cpp (builds + computes the ggml graph)
-    plus binding.cpp defining armbench_entry_<op> (unpacks the generic
+    plus binding.cpp defining kernelshift_entry_<op> (unpacks the generic
     `const void* const*` input slots, with per-Definition axes baked as
     constexpr) and the <op>.h contract
 

@@ -14,7 +14,7 @@ gates at `baseline_sqnr_db - EvalConfig.sqnr_margin_db`.
 Re-run this whenever the workload inputs change -- the floor is only valid for the exact
 inputs it was measured on.
 
-    calibrate_sqnr_floors(author="reference-scalar", baseline_author="baseline-llamacpp-arm",
+    calibrate_sqnr_floors(author="reference-scalar", baseline_author="baseline-llamacpp",
                           tag="e2e:qwen3.5-4b")             # or: python -m kgen calibrate --author ... --baseline-author ... --tag ...
 
 Nothing here is specific to one framework: which author is the reference and which is the

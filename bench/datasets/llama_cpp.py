@@ -3,7 +3,7 @@
 Every llama.cpp baseline ships a self-contained binding.cpp (see
 the gen-baseline-solution skill) whose entry has one generic ABI:
 
-    int armbench_entry_<op_type>(const void* const* inputs,
+    int kernelshift_entry_<op_type>(const void* const* inputs,
                                  void*              output,
                                  const int64_t*     var_axes);
 

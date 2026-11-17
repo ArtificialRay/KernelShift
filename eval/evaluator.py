@@ -300,10 +300,9 @@ def run_agentic_eval(
     isa_desc, isa_name = _ISA_PROMPT_INFO.get(isa, (isa or "AArch64", "SVE2"))
 
     _BASELINE_LABELS = {
-        "baseline-ncnn-arm":     "hand-optimized ncnn ARM baseline",
+        "baseline-ncnn":     "hand-optimized ncnn ARM baseline",
         "reference-scalar":      "reference scalar implementation",
-        "reference":             "reference scalar implementation",
-        "baseline-llamacpp-arm": "llama.cpp (ggml) baseline",
+        "baseline-llamacpp": "llama.cpp (ggml) baseline",
     }
     baseline_label = _BASELINE_LABELS.get(baseline_author, baseline_author)
 

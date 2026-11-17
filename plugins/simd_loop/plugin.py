@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """kgen plugin: generate the simd-loop bench-trace artifacts for the supported SIMD Loops.
 
-Archived generator (it produced what is in the dataset: reference/autovec/baseline-sve/sve2/sme2 solutions, the
+Archived generator (it produced what is in the dataset: reference-scalar/autovec/baseline-simd-loop-sve/sve2/sme2 solutions, the
 sme2-kernel:* tags, the M4 streaming entry, the n%256 padding bindings). Logic is unchanged; only the interface is
 kgen's: discover(argv) writes into a staging directory, and the files go into the warehouse through `kgen add`.
 
@@ -245,7 +245,7 @@ def _classify(loop_id: str, fields: List[Field]) -> Optional[LoopInfo]:
         return _mk(n_field=n_field, res_field=res_field, kind="scalar")
 
     # Array-output: no scalar res, 2+ ptrs, last ptr is the output.
-    # ABI: armbench_entry(in1, ..., int64_t n, void* res_out) where res_out
+    # ABI: kernelshift_entry(in1, ..., int64_t n, void* res_out) where res_out
     # is the pre-allocated N-element output buffer.
     if res_field is None and len(ptr_fields) >= 2:
         return _mk(n_field=n_field, output_ptr=ptr_fields[-1], kind="array")
@@ -299,7 +299,7 @@ struct {lid}_data {{
 #ifdef __cplusplus
 extern "C" {{
 #endif
-int armbench_entry_{lid}({args});
+int kernelshift_entry_{lid}({args});
 #ifdef __cplusplus
 }}
 #endif
@@ -325,7 +325,7 @@ def _gen_harness_cpp(info: LoopInfo) -> str:
 
 extern "C" void inner_{lid}(struct {lid}_data *data);
 
-extern "C" int armbench_entry_{lid}({args}) {{
+extern "C" int kernelshift_entry_{lid}({args}) {{
     struct {lid}_data d;
     d.{info.n_field.name} = {n_cast};
     {ptr_assigns}
@@ -353,7 +353,7 @@ extern "C" int armbench_entry_{lid}({args}) {{
 
 extern "C" void inner_{lid}(struct {lid}_data *data);
 
-extern "C" int armbench_entry_{lid}({args}) {{
+extern "C" int kernelshift_entry_{lid}({args}) {{
     struct {lid}_data data;
     {ptr_assigns}
     data.{out.name} = static_cast<{out.c_type} *>(res_out);
@@ -376,7 +376,7 @@ extern "C" int armbench_entry_{lid}({args}) {{
 
 extern "C" void inner_{lid}(struct {lid}_data *data);
 
-extern "C" int armbench_entry_{lid}({args}) {{
+extern "C" int kernelshift_entry_{lid}({args}) {{
     if (n < 0 || n > std::numeric_limits<int>::max()) return -1;
     struct {lid}_data data;
     {ptr_assigns}
@@ -681,7 +681,7 @@ def _extract_scalar_kernel(loop_id: str) -> str:
     return code
 
 
-# Minimal prelude bundled with each baseline-sve kernel so the extracted ARM SVE
+# Minimal prelude bundled with each baseline-simd-loop-sve kernel so the extracted ARM SVE
 # function is self-contained (no dependency on common/loops.h). These are the
 # exact macros the HAVE_SVE_INTRINSICS blocks use, copied from common/loops.h.
 # On a non-SME SVE2 target (Graviton4) SC_SVE_ATTR is empty.
@@ -744,7 +744,7 @@ _CPP_STUB_HEADERS = [
 #     broken baseline is ever emitted.
 _SVE_TIERS = {
     "sve": {
-        "author": "baseline-sve",
+        "author": "baseline-simd-loop-sve",
         "isa_features": ["sve"],
         "asm_fallback": {
             "loop_038", "loop_103", "loop_105", "loop_108", "loop_109", "loop_110",
@@ -766,7 +766,7 @@ _SVE_TIERS = {
     # have real ZA-tile kernels. Emitted only with --emit-sme2; correctness is
     # checked under QEMU with analysis/sme_qemu_check.py.
     "sme2": {
-        "author": "baseline-sme2",
+        "author": "baseline-simd-loop-sme2",
         "isa_features": ["sme2"],
         "defines": ["-DHAVE_SME_INTRINSICS"],
         # Arm gates the fp64 ZA kernels on __ARM_FEATURE_SME_F64F64. M4 has
@@ -789,7 +789,7 @@ _SVE_TIERS = {
         },
     },
     "sve2": {
-        "author": "baseline-sve2",
+        "author": "baseline-simd-loop-sve2",
         "isa_features": ["sve2"],
         "asm_fallback": set(),
         "skip": {
@@ -806,8 +806,8 @@ _SVE_TIERS = {
 
 
 # The sve2 tier is generated only with --emit-sve2. What ships in bench-trace as
-# baseline-sve2 is the Graviton4-validated set from 2026-07-23 (the files that
-# were baseline-sve until 2026-09-11, with author/name renamed and
+# baseline-simd-loop-sve2 is the Graviton4-validated set from 2026-07-23 (the files that
+# were the SVE baseline until 2026-09-11, with author/name renamed and
 # -march=native restored) — frozen so nobody's sve2 numbers move. The
 # generator's own sve2 output (new extractor, cross-compiled, never run on a
 # c8g) is a candidate replacement to audit first.
@@ -1009,7 +1009,7 @@ def _sme_streaming_entry(lid: str, code: str) -> str:
 
 
 def _sme2_kernel_tags(lid: str) -> list:
-    """Definition tag saying what kind of kernel the loop's baseline-sme2 is:
+    """Definition tag saying what kind of kernel the loop's baseline-simd-loop-sme2 is:
     `sme2-kernel:za` for Arm's ZA-tile kernels (LOOP_ATTR SME_ZA_ATTR), else
     `sme2-kernel:streaming-sve` (the SVE kernel run in streaming mode), so
     results can be reported separately. No tag when the loop has no sme2
@@ -1149,7 +1149,7 @@ def _write_workloads(info: LoopInfo) -> None:
 
 # Baseline solution authors. Both compile the SAME kernel source; they differ
 # only in compile flags, giving two baselines per loop:
-#   reference — scalar source at -O2 with no -march, as published in the dataset (the
+#   reference-scalar — scalar source at -O2 with no -march, as published in the dataset (the
 #               compiler may auto-vectorize to Neon, never to SVE): the speedup denominator.
 #   autovec   — same source, let the compiler auto-vectorize: the "free compiler" ceiling.
 # `-march=native` was unreliable at detecting SVE on Graviton3 (clang emitted
@@ -1158,7 +1158,7 @@ def _write_workloads(info: LoopInfo) -> None:
 # mcp_app/agent_tools/isa.py::march_for_isa() uses for candidate compiles.
 _SOLUTION_AUTHORS = [
     {
-        "author": "reference",
+        "author": "reference-scalar",
         "compile_flags": ["-O2", "-std=c++14"],
         "desc": "Scalar reference (-O2, no -march; Neon auto-vectorization may apply, no SVE)",
     },
@@ -1240,7 +1240,7 @@ static inline void *_zeroed(uint64_t bytes) {{ void *p = calloc(bytes ? bytes : 
 _SVE_PAD_BINDINGS = {
     # complex uint32 pairs: size must be a multiple of the words-per-vector.
     "loop_109": """
-extern "C" int armbench_entry_loop_109(void *a0, void *b0, int64_t size, void *res_out) {
+extern "C" int kernelshift_entry_loop_109(void *a0, void *b0, int64_t size, void *res_out) {
     const uint64_t n = (uint64_t)size, mult = _VLW();
     struct loop_109_data _kd;
     if (n % mult == 0) {
@@ -1260,7 +1260,7 @@ extern "C" int armbench_entry_loop_109(void *a0, void *b0, int64_t size, void *r
 }
 """,
     "loop_112": """
-extern "C" int armbench_entry_loop_112(void *a0, void *b0, int64_t size, void *res_out) {
+extern "C" int kernelshift_entry_loop_112(void *a0, void *b0, int64_t size, void *res_out) {
     const uint64_t n = (uint64_t)size, mult = _VLW();
     struct loop_112_data _kd;
     if (n % mult == 0) {
@@ -1282,7 +1282,7 @@ extern "C" int armbench_entry_loop_112(void *a0, void *b0, int64_t size, void *r
     # uint32 pair-wise add over N elements: N must be a multiple of two vectors
     # of words. Zero padding matches the reference (it zero-pads odd N).
     "loop_113": """
-extern "C" int armbench_entry_loop_113(void *a0, void *b0, int64_t n_in, void *res_out) {
+extern "C" int kernelshift_entry_loop_113(void *a0, void *b0, int64_t n_in, void *res_out) {
     const uint64_t n = (uint64_t)n_in, mult = 2 * _VLW();
     struct loop_113_data data;
     if (n % mult == 0) {
@@ -1304,7 +1304,7 @@ extern "C" int armbench_entry_loop_113(void *a0, void *b0, int64_t n_in, void *r
     # complex int8 dot over pairs: the kernel's tail-only path is wrong below
     # two vectors of words; a0/b0 hold 2*size cint8_t, c0 holds size cint32_t.
     "loop_110": """
-extern "C" int armbench_entry_loop_110(void *a0, void *b0, int64_t size, void *res_out) {
+extern "C" int kernelshift_entry_loop_110(void *a0, void *b0, int64_t size, void *res_out) {
     const uint64_t n = (uint64_t)size, minimum = 2 * _VLW();
     struct loop_110_data _kd;
     if (n >= minimum) {
@@ -1331,7 +1331,7 @@ extern "C" int armbench_entry_loop_110(void *a0, void *b0, int64_t size, void *r
     # multiple of 2*VLh and copy the valid (dim-1)x(dim-1) block back; the
     # last row and column are zero, as in the reference.
     "loop_038": """
-extern "C" int armbench_entry_loop_038(void *a, void *b, int64_t dim_in, void *res_out) {
+extern "C" int kernelshift_entry_loop_038(void *a, void *b, int64_t dim_in, void *res_out) {
     const uint64_t dim = (uint64_t)dim_in, vlh = _VLH(), two = 2 * vlh;
     struct loop_038_data _kd;
     _Float16 *c = static_cast<_Float16 *>(res_out);
@@ -1361,7 +1361,7 @@ extern "C" int armbench_entry_loop_038(void *a, void *b, int64_t dim_in, void *r
     # kernel tiles m by 8 vectors of words and n by 2 vectors of words. Zero
     # padding leaves every valid c[j] unchanged.
     "loop_219": """
-extern "C" int armbench_entry_loop_219(void *a, void *b, int64_t m_in, int64_t n_in, void *res_out) {
+extern "C" int kernelshift_entry_loop_219(void *a, void *b, int64_t m_in, int64_t n_in, void *res_out) {
     const uint64_t m = (uint64_t)m_in, n = (uint64_t)n_in, vlw = _VLW();
     const uint64_t mm = (8 * vlw > 64 ? 8 * vlw : 64), nm = (2 * vlw > 16 ? 2 * vlw : 16);
     struct loop_219_data _kd;
@@ -1389,7 +1389,7 @@ extern "C" int armbench_entry_loop_219(void *a, void *b, int64_t m_in, int64_t n
     # arena allocation hides that). Run it in place on the whole vectors and on
     # the tail through a one-vector zero-padded copy.
     "loop_128": """
-extern "C" int armbench_entry_loop_128(void *a, void *b, int64_t n_in, void *res_out) {
+extern "C" int kernelshift_entry_loop_128(void *a, void *b, int64_t n_in, void *res_out) {
     const uint64_t n = (uint64_t)n_in, vlw = _VLW(), main_n = n / vlw * vlw, tail = n - main_n;
     uint32_t *pa = static_cast<uint32_t *>(a), *pb = static_cast<uint32_t *>(b);
     uint32_t *pc = static_cast<uint32_t *>(res_out);
@@ -1415,7 +1415,7 @@ extern "C" int armbench_entry_loop_128(void *a, void *b, int64_t n_in, void *res
     # Sort a copy padded with INT32_MAX (sorts to the end) instead, with the
     # kernel's own scratch sizes, and copy the first n back.
     "loop_124": """
-extern "C" int armbench_entry_loop_124(void *data, void *temp, void *hist, void *prfx, int64_t n_in, void *unused) {
+extern "C" int kernelshift_entry_loop_124(void *data, void *temp, void *hist, void *prfx, int64_t n_in, void *unused) {
     const uint64_t n = (uint64_t)n_in, mvl = _VLW();
     struct loop_124_data d;
     if (n >= mvl) {
@@ -1441,7 +1441,7 @@ extern "C" int armbench_entry_loop_124(void *data, void *temp, void *hist, void 
     # res in whole vectors of halfs. Always run on padded copies — an int16
     # copy of n + lags elements is negligible next to the n*lags kernel.
     "loop_114": """
-extern "C" int armbench_entry_loop_114(void *data, int64_t n_in, int64_t lags_in, int64_t scale, void *res_out) {
+extern "C" int kernelshift_entry_loop_114(void *data, int64_t n_in, int64_t lags_in, int64_t scale, void *res_out) {
     const uint64_t n = (uint64_t)n_in, lags = (uint64_t)lags_in, vlh = _VLH();
     struct loop_114_data _kd;
     int16_t *pd = (int16_t *)_zeroed((n + lags + 2 * vlh) * sizeof(int16_t));
@@ -1473,12 +1473,12 @@ def _sve_binding(lid: str, base_cpp: str, tier: str = "sve") -> str:
     wrapper = (f"extern \"C\" void inner_loop_{num}(struct loop_{num}_data *data) {inner_attr};\n"
                # __arm_locally_streaming / __arm_new are declaration attributes:
                # they go before the declarator, as in upstream's LOOP_DECL.
-               f"{outer} static void __attribute__((noinline)) _armbench_call_{num}(struct loop_{num}_data *d) "
+               f"{outer} static void __attribute__((noinline)) _kernelshift_call_{num}(struct loop_{num}_data *d) "
                f"{{ inner_loop_{num}(d); }}\n")
     cpp = re.sub(rf'^extern "C" void inner_loop_{num}\(struct loop_{num}_data \*data\);\s*$',
                  lambda _: _SME_ATTRS + wrapper, cpp, count=1, flags=re.MULTILINE)
-    assert f"_armbench_call_{num}" in cpp, f"{lid}: inner_loop declaration not found in binding"
-    cpp = re.sub(rf"\binner_loop_{num}\((&\w+)\);", rf"_armbench_call_{num}(\1);", cpp)
+    assert f"_kernelshift_call_{num}" in cpp, f"{lid}: inner_loop declaration not found in binding"
+    cpp = re.sub(rf"\binner_loop_{num}\((&\w+)\);", rf"_kernelshift_call_{num}(\1);", cpp)
     # The pad prelude falls back to 128-bit constants without __ARM_FEATURE_SVE,
     # which -mcpu=apple-m4 never defines: pad by the streaming vector length.
     cpp = cpp.replace(_PAD_VL_UNITS, "#include <arm_sve.h>\n")
@@ -1493,7 +1493,7 @@ def _sve_binding(lid: str, base_cpp: str, tier: str = "sve") -> str:
         guard = ("    // Arm's documented shape rule for this kernel (see loops/{lid}.c);\n"
                  "    // the workloads satisfy it, any other shape is refused.\n"
                  f"    if (!({_SME_SHAPE_RULES[lid]})) return 1;\n").replace("{lid}", lid)
-        cpp, n = re.subn(rf"^(extern \"C\" int armbench_entry_{lid}\([^)]*\) \{{\n)",
+        cpp, n = re.subn(rf"^(extern \"C\" int kernelshift_entry_{lid}\([^)]*\) \{{\n)",
                          lambda mt: mt.group(1) + guard, cpp, count=1, flags=re.MULTILINE)
         assert n == 1, f"{lid}: entry function not found in binding"
     return cpp
@@ -1511,7 +1511,7 @@ _SME_SHAPE_RULES = {
 }
 
 
-# Minimal SME ABI routines, shipped with every baseline-sme2 solution because
+# Minimal SME ABI routines, shipped with every baseline-simd-loop-sme2 solution because
 # not every toolchain links them (Ubuntu's clang compiler-rt omits sme-abi.S,
 # so __arm_new("za") functions fail to link). They are only correct when no
 # caller keeps live ZA state across a lazy-save block, which holds for the
@@ -1527,14 +1527,14 @@ __attribute__((naked)) void __arm_sme_state(void) { __asm__ volatile("mrs x0, sv
 
 
 def _write_sve_solution(lid: str, base_sources: list) -> None:
-    """Emit one expert-SVE author per tier in _SVE_TIERS (baseline-sve for a
-    Graviton3, baseline-sve2 for a Graviton4): same harness as the
+    """Emit one expert-SVE author per tier in _SVE_TIERS (baseline-simd-loop-sve for a
+    Graviton3, baseline-simd-loop-sve2 for a Graviton4): same harness as the
     reference/autovec pair, with kernel.cpp replaced by the Arm-authored kernel
     selected for that tier. The expert hand-SVE ceiling. No-op for a tier where
     the loop is skipped or has no SVE block."""
     for tier, spec in _SVE_TIERS.items():
         if tier == "sve2" and not _EMIT_SVE2:
-            continue  # bench-trace's baseline-sve2 is the frozen 2026-07-23 set (see _EMIT_SVE2)
+            continue  # bench-trace's baseline-simd-loop-sve2 is the frozen 2026-07-23 set (see _EMIT_SVE2)
         if tier == "sme2" and not _EMIT_SME2:
             continue
         if lid in spec["skip"]:
@@ -1638,7 +1638,7 @@ _DTYPE_OVERRIDES: dict[str, dict[str, str]] = {
 #   reference — Python reference source (receives inputs as numpy arrays)
 #   sizes   — {"edge": [{axis: val, ...}, ...], "perf": [...]} workload points
 # C types are read from the parsed STRUCT_DEF, so dtypes stay in sync with the loop.
-# ABI: armbench_entry_loop_NNN(in1, ..., int64_t <axes...>, void* res_out)
+# ABI: kernelshift_entry_loop_NNN(in1, ..., int64_t <axes...>, void* res_out)
 
 @dataclass
 class MultiAxisInfo:
@@ -2430,7 +2430,7 @@ struct {lid}_data {{
 #ifdef __cplusplus
 extern "C" {{
 #endif
-int armbench_entry_{lid}({args});
+int kernelshift_entry_{lid}({args});
 #ifdef __cplusplus
 }}
 #endif
@@ -2463,7 +2463,7 @@ def _gen_ma_harness_cpp(info: MultiAxisInfo) -> str:
 
 extern "C" void inner_{lid}(struct {lid}_data *data);
 
-extern "C" int armbench_entry_{lid}({args}) {{
+extern "C" int kernelshift_entry_{lid}({args}) {{
     struct {lid}_data _kd;
 {chr(10).join(assigns)}
     inner_{lid}(&_kd);
@@ -2566,7 +2566,7 @@ def _description_ma(info: MultiAxisInfo) -> str:
 
 # ── Sentinel loops (begin/end pointer ABI, byte buffers, scalar output) ───────
 # Structs use (begin ptr[s], end/lmt ptr, scalar result) instead of (ptr, int n).
-# ABI: armbench_entry_loop_NNN(void* buf0, [void* buf1,] int64_t n, void* res_out)
+# ABI: kernelshift_entry_loop_NNN(void* buf0, [void* buf1,] int64_t n, void* res_out)
 # — the harness derives `<sentinel> = buf0 + n`, so the adapter's normal
 # scalar-output path (input ptrs + n + res_out) works unchanged. Buffers are fed
 # by the `bytes` workload input type (raw or null-terminated cstrings).
@@ -2720,7 +2720,7 @@ def _write_sentinel(loop_id: str) -> None:
          f"#pragma once\n#include <stdint.h>\n\n"
          f"struct {loop_id}_data {{\n{chr(10).join(struct_lines)}\n}};\n\n"
          f"#ifdef __cplusplus\nextern \"C\" {{\n#endif\n"
-         f"int armbench_entry_{loop_id}({in_args});\n"
+         f"int kernelshift_entry_{loop_id}({in_args});\n"
          f"#ifdef __cplusplus\n}}\n#endif\n")
 
     assigns = [f"    _kd.{b} = static_cast<{elem_ct} *>({b});" for b in buffers]
@@ -2729,7 +2729,7 @@ def _write_sentinel(loop_id: str) -> None:
     cpp = (f"// Auto-generated by plugins/simd_loop/plugin.py — do not hand-edit.\n"
            f'#include "{loop_id}.h"\n#include <stdint.h>\n\n'
            f'extern "C" void inner_{loop_id}(struct {loop_id}_data *data);\n\n'
-           f'extern "C" int armbench_entry_{loop_id}({in_args}) {{\n'
+           f'extern "C" int kernelshift_entry_{loop_id}({in_args}) {{\n'
            f"    struct {loop_id}_data _kd;\n{chr(10).join(assigns)}\n"
            f"    inner_{loop_id}(&_kd);\n"
            f"    *static_cast<{r_ct} *>(res_out) = _kd.{result};\n"

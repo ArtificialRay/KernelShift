@@ -40,11 +40,11 @@ copying the closest existing one and changing what the definition changes), then
   "definition":  "<def_name>",
   "dataset":     "<ncnn|llama.cpp|kleidiai>",
   "author":      "reference-scalar",
-  "description": "Scalar raw-pointer <op_type> for <def_name>. Constexpr-baked dims; armbench_entry_<op_type> calls inner_<op_type>. Ground-truth correctness baseline.",
+  "description": "Scalar raw-pointer <op_type> for <def_name>. Constexpr-baked dims; kernelshift_entry_<op_type> calls inner_<op_type>. Ground-truth correctness baseline.",
   "spec": {
     "language":        "cpp",
     "target_hardware": ["graviton3", "aarch64-sve"],
-    "entry_point":     "<op_type>.cpp::armbench_entry_<op_type>",
+    "entry_point":     "<op_type>.cpp::kernelshift_entry_<op_type>",
     "dependencies":    [],
     "isa_features":    [],
     "compile_flags":   ["-O2", "-std=c++14"],
@@ -52,7 +52,7 @@ copying the closest existing one and changing what the definition changes), then
   },
   "sources": [
     { "path": "<op_type>.h",   "content": "// constexpr params + inner_<op_type> declaration" },
-    { "path": "<op_type>.cpp", "content": "// armbench_entry_<op_type> -> inner_<op_type>" },
+    { "path": "<op_type>.cpp", "content": "// kernelshift_entry_<op_type> -> inner_<op_type>" },
     { "path": "kernel.cpp",    "content": "// scalar inner_<op_type>" }
   ]
 }
@@ -62,7 +62,7 @@ Constraints that lint or the build enforce:
 - `name` must be `<author>_<definition>`; `definition` must already be in the warehouse.
 - The source file names are always `<op_type>.h`, `<op_type>.cpp`, `kernel.cpp`, named after the
   definition's own `op_type` (a quantized variant still produces `conv2d.h`, not `conv2d_w8a8ch.h`).
-- `entry_point` is `"<op_type>.cpp::armbench_entry_<op_type>"`, other format will cause a duplicate-symbol link error
+- `entry_point` is `"<op_type>.cpp::kernelshift_entry_<op_type>"`, other format will cause a duplicate-symbol link error
 - Entry points are `extern "C"`, not `static`. No OpenMP, threads, `fork`, they will be rejected by source pattern scanning at evaluation time.
 
 Start from the closest existing file: `kgen show` lists solutions; open one under
@@ -92,16 +92,16 @@ Get this order exactly right; a mismatch is a SIGSEGV with no useful message. Ex
 
 ```c
 // conv2d: weight's shape contributes the extra var axis C_out
-extern "C" int armbench_entry_conv2d(const float* input, float* output, const float* weight,
+extern "C" int kernelshift_entry_conv2d(const float* input, float* output, const float* weight,
                                      const float* bias, int N, int C_in, int H, int W, int C_out);
 // packed ggml gemm: A bf16, B as uint8 blocks [N, K_bytes], output float
-extern "C" int armbench_entry_gemm(const uint16_t* A, float* out, const uint8_t* B, int M);
+extern "C" int kernelshift_entry_gemm(const uint16_t* A, float* out, const uint8_t* B, int M);
 ```
 
 ### 3. The three files
 
 - `<op_type>.h`: `#pragma once`, the `<op_type>_def` namespace with the constexpr values, and the `extern "C"` declaration of `inner_<op_type>`.
-- `<op_type>.cpp`: `armbench_entry_<op_type>` computes derived dims from the constexprs and calls `inner_<op_type>`; returns 0.
+- `<op_type>.cpp`: `kernelshift_entry_<op_type>` computes derived dims from the constexprs and calls `inner_<op_type>`; returns 0.
 - `kernel.cpp`: the scalar `inner_<op_type>` using the `_def` constants. This is the file an LLM replaces, so keep it plain loops.
 
 For a quantized kernel follow the definition's own `reference` Python: typically `real = int8_value * scale` with `scale = input_scale * weight_scales[c]` (a dequantization multiplier, the opposite of ncnn's own int8 *quantization* scale fields). Accumulate in `int64_t`, apply
@@ -134,5 +134,5 @@ scale and bias in `double`, cast to `float` at the very end, to match the refere
 | `name: expected <author>_<definition>` | Wrong `name` | Make it `reference-scalar_<def>` |
 | `definition ... is not in the warehouse` | Definition not added yet | `kgen add definition` first |
 | `axis ... is not const` while baking | A var axis put in the constexpr block | Move it to the entry signature |
-| Duplicate symbol at link | `entry_point` points at `kernel.cpp` | `<op_type>.cpp::armbench_entry_<op_type>` |
+| Duplicate symbol at link | `entry_point` points at `kernel.cpp` | `<op_type>.cpp::kernelshift_entry_<op_type>` |
 | Wrong backend gets a candidate | Ignored the `baseline-solution:` tag | Use the dataset that matches the tag |

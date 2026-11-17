@@ -58,7 +58,7 @@ Key rules:
     and must NOT be redefined — write only {kernel_filename}.
   - Define exactly the one function the reference kernel below defines: same
     name, same signature, C linkage. Nothing else — in particular the harness
-    already defines the armbench_entry_* symbol, so defining it yourself fails
+    already defines the kernelshift_entry_* symbol, so defining it yourself fails
     to link, even though the header declares it.
   - Use {isa_name} intrinsics freely; the build system passes the correct
     -march flag. Inline asm is allowed if you think it helps.
@@ -152,10 +152,9 @@ def run_single_shot(
 
     isa_desc, isa_name = _ISA_PROMPT_INFO.get(isa, (isa or "AArch64", "SVE2"))
     baseline_label = {
-        "baseline-ncnn-arm":     "hand-optimized ncnn ARM baseline",
+        "baseline-ncnn":     "hand-optimized ncnn ARM baseline",
         "reference-scalar":      "reference scalar implementation",
-        "reference":             "reference scalar implementation",
-        "baseline-llamacpp-arm": "llama.cpp (ggml) baseline",
+        "baseline-llamacpp": "llama.cpp (ggml) baseline",
     }.get(baseline_author, baseline_author)
 
     system = SINGLE_SHOT_SYSTEM_PROMPT.format(

@@ -4,9 +4,9 @@ The C-side implementation of these factory functions lives in
 `bench/datasets/_ncnn_lib/_mat_factory.cpp`, which the NcnnBuilder
 (`bench/compile/builders/ncnn.py`) compiles into every solution.so build. The
 dlopened .so therefore exports both:
-  - armbench_entry_<op_type>  (from the solution's own sources)
+  - kernelshift_entry_<op_type>  (from the solution's own sources)
   - armbench_ncnn_mat_*       (from _mat_factory.cpp, bound here per .so)
-Every ncnn baseline ships a self-contained armbench_entry_<op_type> that bakes
+Every ncnn baseline ships a self-contained kernelshift_entry_<op_type> that bakes
 its scalar params as constexpr, so the entry takes only Mat/Option pointers:
 one per non-scalar tensor in `definition.inputs`, plus the output and Option.
 """
@@ -230,7 +230,7 @@ class NcnnDataset:
         definition: Definition,
         out_shape: Optional[Tuple[int, ...]] = None,
     ) -> NcnnContext:
-        """Build the ctypes argument list for `armbench_entry_<op_type>`.
+        """Build the ctypes argument list for `kernelshift_entry_<op_type>`.
 
         Tensor order is exactly `definition.inputs` (non-scalars only, in
         declaration order). out_shape is unused (ncnn allocates internally).
@@ -263,7 +263,7 @@ class NcnnDataset:
 
         opt_ptr = ctypes.c_void_p(fns.option_default())
 
-        # Assemble entry args to match armbench_entry_<op_type>'s C signature:
+        # Assemble entry args to match kernelshift_entry_<op_type>'s C signature:
         # (primary, top, *rest, opt) — however many tensors the definition has.
         entry_args = (tensor_ptrs[0], output_ptr) + tuple(tensor_ptrs[1:]) + (opt_ptr,)
 

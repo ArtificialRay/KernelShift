@@ -36,7 +36,7 @@ struct Args {
     std::string type = "q4_K";
     int64_t N = 0, K = 0;
     std::vector<int> Ms = {1, 2, 4, 8, 16, 32, 128, 512};
-    std::string so, symbol = "armbench_entry_gemm", abi = "entry", shape;
+    std::string so, symbol = "kernelshift_entry_gemm", abi = "entry", shape;
     std::string weights, act;       // optional input files
     std::string act_dtype = "auto"; // for raw act files: f32 | bf16
     int reps = 20, warmup = 3, min_reps = 3;
@@ -51,7 +51,7 @@ struct Args {
 static void usage() {
     fprintf(stderr,
         "usage: bench_repack --type q4_K|q5_K|q6_K|q8_0 --N n --K k [--M 1,2,4,...]\n"
-        "   [--so kernel.so --symbol armbench_entry_gemm --abi entry|entry_rows|llamacpp] [--shape name]\n"
+        "   [--so kernel.so --symbol kernelshift_entry_gemm --abi entry|entry_rows|llamacpp] [--shape name]\n"
         "   [--reps 20] [--warmup 3] [--min-reps 3] [--max-sec 4] [--flush-mb 0] [--ref-rows 64] [--seed 1234]\n"
         "   [--weights raw_block_rows.bin] [--act file.npy|file.bin --act-dtype auto|f32|bf16]\n"
         "   [--no-norepack] [--no-repack] [--gen-threads 0]\n");

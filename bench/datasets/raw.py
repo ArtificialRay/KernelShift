@@ -2,7 +2,7 @@
 
 Used for every CANDIDATE solution regardless of its declared `dataset`. The
 candidate is built by CandidateBuilder with no framework dependency, so its
-`armbench_entry_<op>` takes plain float pointers + the truly runtime dims.
+`kernelshift_entry_<op>` takes plain float pointers + the truly runtime dims.
 Const dims (Cout, Kh, Kw, …, pad, activation) are baked as constexpr into
 each candidate's kernel.cpp
 """
@@ -78,7 +78,7 @@ class RawDataset:
     needed in the runner.
 
     ABI convention:
-        armbench_entry_<op>(float* primary, float* output,
+        kernelshift_entry_<op>(float* primary, float* output,
                             float* rest...,
                             int var_dim_0, int var_dim_1, ...)
     Tensor order follows definition.inputs (non-scalars); var dims are each

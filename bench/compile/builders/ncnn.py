@@ -3,7 +3,7 @@
 Builds, against the real ncnn checkout (`ncnn/src/*.cpp`, `ncnn/src/layer/arm/`):
 
   - the solution's own sources — kernel.cpp (delegates to the ncnn arm layer)
-    plus binding.cpp defining armbench_entry_<op> (the ncnn::Mat/Option shim,
+    plus binding.cpp defining kernelshift_entry_<op> (the ncnn::Mat/Option shim,
     with per-Definition params baked as constexpr) and the <op>.h contract
   - bench/datasets/_ncnn_lib/_mat_factory.cpp (numpy ↔ ncnn::Mat)
 
