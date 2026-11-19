@@ -1,6 +1,6 @@
 """Per-dataset Python adapters: numpy ↔ framework-native tensor handles.
 
-The C-side `armbench_entry_<op_type>` binding ships in each solution's own
+The C-side `kernelshift_entry_<op_type>` binding ships in each solution's own
 sources. The Python-side adapter here provides:
 
   - `wrap_inputs(np_inputs, op_type, lib, *, definition, out_shape)` — turn

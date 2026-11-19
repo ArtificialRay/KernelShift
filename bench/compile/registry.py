@@ -39,7 +39,7 @@ framework-specific builder above it wanted (its own can_build() is an
 unconditional True), so every dataset with a dedicated builder must get
 first refusal before dispatch ever reaches it."""
 
-_LOCK_DIR = Path(tempfile.gettempdir()) / "armbench_build_locks"
+_LOCK_DIR = Path(tempfile.gettempdir()) / "kernelshift_build_locks"
 
 
 class BuilderRegistry:

@@ -177,7 +177,7 @@ def _tf_lock():
     """Serialise terraform apply/destroy across concurrent driver processes.
     Terraform's own state lock makes concurrent callers fail ("Error acquiring
     the state lock"); this one makes them wait their turn instead."""
-    lock_path = TERRAFORM_DIR / ".armbench.lock"
+    lock_path = TERRAFORM_DIR / ".kernelshift.lock"
     with open(lock_path, "w") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
         try:

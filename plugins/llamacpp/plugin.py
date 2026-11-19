@@ -10,7 +10,7 @@ plugins/llamacpp/inventory.py run as a kgen discover plugin, or any file in that
   definitions/gemm/gemm_<tag>_n<N>_k<K>.json         (packed ggml block ABI)
   workloads/gemm/gemm_<tag>_n<N>_k<K>.jsonl          (M = --m-values, B = bytes of the ggml type)
   solutions/llama.cpp/reference-scalar/gemm/...      (scalar port of ggml's vec_dot, the agent's start)
-  solutions/llama.cpp/baseline-llamacpp-arm/gemm/... (ggml_mul_mat on the same blocks, the speedup baseline)
+  solutions/llama.cpp/baseline-llamacpp/gemm/... (ggml_mul_mat on the same blocks, the speedup baseline)
 The kernel text comes from kquant_templates.py (next to this file).
 
     python -m kgen discover plugins/llamacpp/plugin.py --out report.json -- \
@@ -84,7 +84,7 @@ def write_definitions(inventory, model_tag: str, root: Path, min_share: float = 
         n_written += 2
 
         for author, sources in (("reference-scalar", kt.reference_scalar_sources(quant, N, K, layout="ggml")),
-                                ("baseline-llamacpp-arm", kt.baseline_sources(quant, N, K, layout="ggml"))):
+                                ("baseline-llamacpp", kt.baseline_sources(quant, N, K, layout="ggml"))):
             write_json(root / "solutions" / "llama.cpp" / author / "gemm" / f"{name}.json",
                        {"name": f"{author}_{name}", "definition": name, "dataset": "llama.cpp", "author": author,
                         "description": kt.description(quant, author, N, K, layout="ggml"),

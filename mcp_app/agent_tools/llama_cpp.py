@@ -1,9 +1,9 @@
 """LlamaCppKernelSession — KernelSession implementation for the llama.cpp dataset.
 
-Agent writes `kernel.cpp` implementing `armbench_llamacpp_<op_type>(...)`
+Agent writes `kernel.cpp` implementing `kernelshift_llamacpp_<op_type>(...)`
 (the contract declared in `<op_type>.h`). The contract header + `binding.cpp`
 (which bakes the
-Definition's const axes and exposes `armbench_entry_<op_type>` over the slim
+Definition's const axes and exposes `kernelshift_entry_<op_type>` over the slim
 raw-pointer ABI `RawDataset` expects — the same convention every other
 candidate uses) are lifted from the `reference-scalar` solution, so the agent
 only writes the kernel body.
@@ -83,7 +83,7 @@ class LlamaCppKernelSession(KernelSession):
     def disassemble(self, definition: str, version: int, fn: Optional[str] = None) -> dict:
         """Disassemble the agent's kernel function (not the entry wrapper)."""
         if fn is None:
-            fn = f"armbench_llamacpp_{self._definition.op_type}"
+            fn = f"kernelshift_llamacpp_{self._definition.op_type}"
         return super().disassemble(definition=definition, version=version, fn=fn)
 
     @classmethod

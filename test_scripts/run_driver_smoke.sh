@@ -92,5 +92,5 @@ run_smoke() {
 }
 
 echo "=== mcp_app.smoke_test_driver smoke test: host=$HOST isa=$ISA author=$AUTHOR ==="
-run_smoke ncnn baseline-ncnn-arm "${NCNN_PROBLEMS[@]}"
-#run_smoke llama.cpp baseline-llamacpp-arm "${LLAMACPP_PROBLEMS[@]}"
+run_smoke ncnn baseline-ncnn "${NCNN_PROBLEMS[@]}"
+#run_smoke llama.cpp baseline-llamacpp "${LLAMACPP_PROBLEMS[@]}"

@@ -90,7 +90,7 @@ class Definition(BaseModelWithDocstrings):
 
     name: NonEmptyString
     op_type: NonEmptyString
-    """General compute category; names the `armbench_entry_<op_type>` symbol and the
+    """General compute category; names the `kernelshift_entry_<op_type>` symbol and the
     definitions/solutions/workloads/traces subdirectory."""
     axes: Dict[NonEmptyString, AxisSpec]
     inputs: Dict[NonEmptyString, TensorSpec]

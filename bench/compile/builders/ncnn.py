@@ -3,7 +3,7 @@
 Builds, against the real ncnn checkout (`ncnn/src/*.cpp`, `ncnn/src/layer/arm/`):
 
   - the solution's own sources — kernel.cpp (delegates to the ncnn arm layer)
-    plus binding.cpp defining armbench_entry_<op> (the ncnn::Mat/Option shim,
+    plus binding.cpp defining kernelshift_entry_<op> (the ncnn::Mat/Option shim,
     with per-Definition params baked as constexpr) and the <op>.h contract
   - bench/datasets/_ncnn_lib/_mat_factory.cpp (numpy ↔ ncnn::Mat)
 
@@ -73,7 +73,7 @@ class NcnnBuilder(Builder):
     """Builds the ncnn baseline solution against the real ncnn checkout."""
 
     def __init__(self) -> None:
-        super().__init__(build_dir_name="armbench-ncnn")
+        super().__init__(build_dir_name="kernelshift-ncnn")
         self._arm_bench_root = Path(__file__).resolve().parents[3] # repo dir
         self._base_root = self._arm_bench_root.parent # repo's parent dir
     def can_build(self, solution: Solution, is_baseline: bool) -> bool:

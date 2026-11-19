@@ -6,15 +6,15 @@ skills/, so mcp_app stays independent of both.
 Usage:
     # General: any dataset/definition(s).
     python -m mcp_app.smoke_test_driver --host 1.2.3.4 --user ubuntu --key-file ~/.ssh/id_rsa \\
-        --dataset ncnn --baseline-author baseline-ncnn-arm --isa sve2 \\
+        --dataset ncnn --baseline-author baseline-ncnn --isa sve2 \\
         --problem conv2d_fp32_kh1_kw1_sh1_sw1_dh1_dw1_p0
 
     # The two definitions used as this repo's standard verification check:
     python -m mcp_app.smoke_test_driver --host <ip> --user ubuntu --key-file ~/.ssh/id_rsa \\
-        --dataset ncnn --baseline-author baseline-ncnn-arm --isa sve2 \\
+        --dataset ncnn --baseline-author baseline-ncnn --isa sve2 \\
         --problem conv2d_fp32_kh1_kw1_sh1_sw1_dh1_dw1_p0
     python -m mcp_app.smoke_test_driver --host <ip> --user ubuntu --key-file ~/.ssh/id_rsa \\
-        --dataset llama.cpp --baseline-author baseline-llamacpp-arm --isa sve2 \\
+        --dataset llama.cpp --baseline-author baseline-llamacpp --isa sve2 \\
         --problem gemm_bf16_n1024_k2048
 
     python -m mcp_app.smoke_test_driver --list-datasets

@@ -69,7 +69,7 @@ class BoundKernel:
     callable. Hides the dataset ABI (ncnn::Mat / raw float*) behind a uniform
     prepare/invoke/read/release interface.
 
-    `entry` is the ctypes function for `armbench_entry_<op_type>`, with its
+    `entry` is the ctypes function for `kernelshift_entry_<op_type>`, with its
     owning CDLL stashed on `entry._lib` (see runner._bind_entry) so the adapter
     can bind its own symbols.
     """

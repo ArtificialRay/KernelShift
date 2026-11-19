@@ -38,11 +38,11 @@ typedef int (*armbench_gemm_fn)(const void * A, const void * B, float * C, int64
 // "entry" ABI: reference-scalar harness entry of agent-submitted kernels; N and K are
 // baked in as constexpr on the kernel side (must equal the manifest's N/K), B_blocks is
 // the raw ggml block rows (src0->data as-is), output is row-major f32 [M,N].
-typedef int (*armbench_entry_gemm_fn)(const uint16_t * A_bf16, float * output, const uint8_t * B_blocks, int M);
-// "entry_rows" ABI: the .so exports BOTH armbench_entry_gemm (N baked = full N) and this
+typedef int (*kernelshift_entry_gemm_fn)(const uint16_t * A_bf16, float * output, const uint8_t * B_blocks, int M);
+// "entry_rows" ABI: the .so exports BOTH kernelshift_entry_gemm (N baked = full N) and this
 // row-range variant: computes only weight rows [0, n_rows) relative to the given B pointer
 // and writes output[m*n_rows + n] (output row stride == n_rows, NOT the full N).
-typedef int (*armbench_entry_gemm_rows_fn)(const uint16_t * A_bf16, float * output, const uint8_t * B_blocks, int M, int n_rows);
+typedef int (*kernelshift_entry_gemm_rows_fn)(const uint16_t * A_bf16, float * output, const uint8_t * B_blocks, int M, int n_rows);
 //   x: [M,D] input, weight: [D], out: [M,D]        (unused: see rms_norm stub)
 typedef int (*armbench_rms_norm_fn)(const void * x, const void * weight, float * out, int64_t M, int64_t D, float eps);
 
@@ -53,9 +53,9 @@ enum armbench_op {
 };
 
 enum armbench_abi {
-    ARMBENCH_ABI_LLAMACPP,  // "llamacpp" (default): armbench_llamacpp_gemm(A, B, C, M, N, K)
-    ARMBENCH_ABI_ENTRY,     // "entry":              armbench_entry_gemm(A_bf16, output, B_blocks, M)
-    ARMBENCH_ABI_ENTRY_ROWS,// "entry_rows":         "entry" + armbench_entry_gemm_rows(..., M, n_rows); multithreaded dispatch
+    ARMBENCH_ABI_LLAMACPP,  // "llamacpp" (default): kernelshift_llamacpp_gemm(A, B, C, M, N, K)
+    ARMBENCH_ABI_ENTRY,     // "entry":              kernelshift_entry_gemm(A_bf16, output, B_blocks, M)
+    ARMBENCH_ABI_ENTRY_ROWS,// "entry_rows":         "entry" + kernelshift_entry_gemm_rows(..., M, n_rows); multithreaded dispatch
     ARMBENCH_ABI_COUNT,
 };
 
@@ -65,7 +65,7 @@ static const char * const armbench_abi_names[ARMBENCH_ABI_COUNT] = {
     [ARMBENCH_ABI_ENTRY_ROWS] = "entry_rows",
 };
 
-#define ARMBENCH_ROWS_SYMBOL_DEFAULT "armbench_entry_gemm_rows"
+#define ARMBENCH_ROWS_SYMBOL_DEFAULT "kernelshift_entry_gemm_rows"
 #define ARMBENCH_N_CHUNK 64         // N-split granularity (rows) when M == 1
 #ifndef ARMBENCH_N_CHUNK_BATCH
 #define ARMBENCH_N_CHUNK_BATCH 128  // ... when 1 < M < nth: batched kernel paths often work in 128-row tiles
@@ -87,7 +87,7 @@ struct armbench_kernel {
     int64_t          row_multiple; // entry_rows: N-split row ranges are multiples of this ("row_multiple", default 1)
     char *           so;
     char *           symbol;
-    char *           symbol_rows;  // entry_rows only ("symbol_rows", default armbench_entry_gemm_rows)
+    char *           symbol_rows;  // entry_rows only ("symbol_rows", default kernelshift_entry_gemm_rows)
     void *           fn;
     void *           fn_rows;      // entry_rows only
     uint64_t         hits;
@@ -582,7 +582,7 @@ bool armbench_override_mul_mat(const struct ggml_compute_params * params, struct
             }
             float * out = (M > 1) ? (float *) ((char *) A + a_bytes) : (float *) dst->data + r0;
             if (ith == 0) note_hit(k, src0, K, N, M, params->nth, "N-split");
-            rc = ((armbench_entry_gemm_rows_fn) k->fn_rows)(A, out,
+            rc = ((kernelshift_entry_gemm_rows_fn) k->fn_rows)(A, out,
                      (const uint8_t *) src0->data + r0 * src0->nb[1], (int) M, (int) n_i);
             if (M > 1) {
                 for (int64_t m = 0; m < M; m++) {
@@ -602,7 +602,7 @@ bool armbench_override_mul_mat(const struct ggml_compute_params * params, struct
                 ggml_cpu_fp32_to_bf16(row, (ggml_bf16_t *) (A + m * K), K);
             }
             if (ith == 0) note_hit(k, src0, K, N, M, params->nth, "M-split");
-            rc = ((armbench_entry_gemm_fn) k->fn)(A, (float *) dst->data + m0 * N, (const uint8_t *) src0->data, (int) M_i);
+            rc = ((kernelshift_entry_gemm_fn) k->fn)(A, (float *) dst->data + m0 * N, (const uint8_t *) src0->data, (int) M_i);
         }
         if (rc != 0) kernel_failed(k, rc, src0, K, N, M);
         return true;
@@ -636,7 +636,7 @@ bool armbench_override_mul_mat(const struct ggml_compute_params * params, struct
     switch (k->abi) {
         case ARMBENCH_ABI_ENTRY:
         case ARMBENCH_ABI_ENTRY_ROWS:
-            rc = ((armbench_entry_gemm_fn) k->fn)(A, (float *) dst->data, (const uint8_t *) src0->data, (int) M);
+            rc = ((kernelshift_entry_gemm_fn) k->fn)(A, (float *) dst->data, (const uint8_t *) src0->data, (int) M);
             break;
         case ARMBENCH_ABI_LLAMACPP:
         default:
@@ -653,7 +653,7 @@ bool armbench_override_mul_mat(const struct ggml_compute_params * params, struct
 // TODO(armbench): ggml's GGML_OP_RMS_NORM has no weight; llama.cpp emits
 // rms_norm followed by a separate GGML_OP_MUL with the norm weight, and the CPU
 // backend fuses that pair in ggml_cpu_try_fuse_ops (ggml-cpu.c, RMS_NORM+MUL).
-// The standalone ABI armbench_llamacpp_rms_norm(x, weight, out, M, D, eps)
+// The standalone ABI kernelshift_llamacpp_rms_norm(x, weight, out, M, D, eps)
 // requires a non-NULL weight, so a correct override needs graph-level matching
 // (claim the RMS_NORM node *and* its consuming MUL, writing the MUL's dst).
 // Until then this returns false and is not wired into the patch.

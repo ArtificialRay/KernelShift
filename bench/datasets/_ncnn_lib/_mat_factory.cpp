@@ -1,5 +1,5 @@
 // Python ↔ ncnn::Mat bridge. NcnnBuilder compiles this source into every ncnn
-// baseline .so, so Python (via ctypes) and the armbench_entry_*
+// baseline .so, so Python (via ctypes) and the kernelshift_entry_*
 // shim (C++) operate on the same ncnn::Mat ABI — no cross-.so vtable risk.
 //
 // Layout convention: 3D Mat is (c, h, w). 1D Mat is (w,). Float32 by default;
@@ -19,8 +19,8 @@ extern "C" {
 // Mat construction
 
 // Create a 3D Mat (c, h, w) and copy `data` (c*h*w float32, C-major) into it.
-// Returns an opaque pointer that Python keeps until armbench_ncnn_mat_destroy.
-void* armbench_ncnn_mat_create_3d(int w, int h, int c, const float* data)
+// Returns an opaque pointer that Python keeps until kernelshift_ncnn_mat_destroy.
+void* kernelshift_ncnn_mat_create_3d(int w, int h, int c, const float* data)
 {
     auto* m = new ncnn::Mat();
     m->create(w, h, c, (size_t)4u, (ncnn::Allocator*)0);
@@ -37,7 +37,7 @@ void* armbench_ncnn_mat_create_3d(int w, int h, int c, const float* data)
 }
 
 // Create a 2D Mat (h, w) — used for Conv1D where shape is (channels=h, seq_len=w).
-void* armbench_ncnn_mat_create_2d(int w, int h, const float* data)
+void* kernelshift_ncnn_mat_create_2d(int w, int h, const float* data)
 {
     auto* m = new ncnn::Mat();
     m->create(w, h, (size_t)4u, (ncnn::Allocator*)0);
@@ -52,7 +52,7 @@ void* armbench_ncnn_mat_create_2d(int w, int h, const float* data)
 // For w == 0 (used by the Python adapter to represent "no bias" / "no activation
 // params"), return a fresh empty ncnn::Mat so the harness can still pass it by
 // reference. Returning nullptr would crash the harness's reinterpret_cast.
-void* armbench_ncnn_mat_create_1d(int w, const float* data)
+void* kernelshift_ncnn_mat_create_1d(int w, const float* data)
 {
     auto* m = new ncnn::Mat();
     if (w <= 0) return m;
@@ -65,7 +65,7 @@ void* armbench_ncnn_mat_create_1d(int w, const float* data)
 // int8 (quantized) Mat construction: same layouts as the float32 factories above, at elemsize=1u.
 
 // Create a 3D int8 Mat (c, h, w) and copy `data` (c*h*w int8, C-major) into it.
-void* armbench_ncnn_mat_create_3d_i8(int w, int h, int c, const int8_t* data)
+void* kernelshift_ncnn_mat_create_3d_i8(int w, int h, int c, const int8_t* data)
 {
     auto* m = new ncnn::Mat();
     m->create(w, h, c, (size_t)1u, (ncnn::Allocator*)0);
@@ -81,7 +81,7 @@ void* armbench_ncnn_mat_create_3d_i8(int w, int h, int c, const int8_t* data)
 }
 
 // Create a 2D int8 Mat (h, w) — used for gemm's w8a8ch primary input A.
-void* armbench_ncnn_mat_create_2d_i8(int w, int h, const int8_t* data)
+void* kernelshift_ncnn_mat_create_2d_i8(int w, int h, const int8_t* data)
 {
     auto* m = new ncnn::Mat();
     m->create(w, h, (size_t)1u, (ncnn::Allocator*)0);
@@ -93,7 +93,7 @@ void* armbench_ncnn_mat_create_2d_i8(int w, int h, const int8_t* data)
 }
 
 // Create a flat 1D int8 Mat (w,) — used for int8 weights.
-void* armbench_ncnn_mat_create_1d_i8(int w, const int8_t* data)
+void* kernelshift_ncnn_mat_create_1d_i8(int w, const int8_t* data)
 {
     auto* m = new ncnn::Mat();
     if (w <= 0) return m;
@@ -104,42 +104,42 @@ void* armbench_ncnn_mat_create_1d_i8(int w, const int8_t* data)
 }
 
 // Create an empty Mat (no allocation). Used for output blob — the solution's
-// armbench_entry_<op> calls .create() on it once output dims are known.
-void* armbench_ncnn_mat_create_empty()
+// kernelshift_entry_<op> calls .create() on it once output dims are known.
+void* kernelshift_ncnn_mat_create_empty()
 {
     return new ncnn::Mat();
 }
 
-void armbench_ncnn_mat_destroy(void* m_v)
+void kernelshift_ncnn_mat_destroy(void* m_v)
 {
     delete reinterpret_cast<ncnn::Mat*>(m_v);
 }
 
 // Mat introspection (for output readback)
 
-int armbench_ncnn_mat_dims(void* m_v)
+int kernelshift_ncnn_mat_dims(void* m_v)
 { return reinterpret_cast<ncnn::Mat*>(m_v)->dims; }
 
-int armbench_ncnn_mat_w(void* m_v)
+int kernelshift_ncnn_mat_w(void* m_v)
 { return reinterpret_cast<ncnn::Mat*>(m_v)->w; }
 
-int armbench_ncnn_mat_h(void* m_v)
+int kernelshift_ncnn_mat_h(void* m_v)
 { return reinterpret_cast<ncnn::Mat*>(m_v)->h; }
 
-int armbench_ncnn_mat_c(void* m_v)
+int kernelshift_ncnn_mat_c(void* m_v)
 { return reinterpret_cast<ncnn::Mat*>(m_v)->c; }
 
-int armbench_ncnn_mat_empty(void* m_v)
+int kernelshift_ncnn_mat_empty(void* m_v)
 { return reinterpret_cast<ncnn::Mat*>(m_v)->empty() ? 1 : 0; }
 
 // Element size in bytes (1 = int8, 4 = float32) — read back to tell which
 // read_* variant to call, instead of assuming float32.
-int armbench_ncnn_mat_elemsize(void* m_v)
+int kernelshift_ncnn_mat_elemsize(void* m_v)
 { return (int)reinterpret_cast<ncnn::Mat*>(m_v)->elemsize; }
 
 // Read a 3D Mat (c, h, w) into a flat C-major float32 buffer (caller-allocated,
 // size c*h*w). Returns 0 on success, -1 on shape mismatch.
-int armbench_ncnn_mat_read_3d(void* m_v, float* out)
+int kernelshift_ncnn_mat_read_3d(void* m_v, float* out)
 {
     const auto& m = *reinterpret_cast<ncnn::Mat*>(m_v);
     if (m.empty() || m.dims != 3) return -1;
@@ -152,7 +152,7 @@ int armbench_ncnn_mat_read_3d(void* m_v, float* out)
     return 0;
 }
 
-int armbench_ncnn_mat_read_2d(void* m_v, float* out)
+int kernelshift_ncnn_mat_read_2d(void* m_v, float* out)
 {
     const auto& m = *reinterpret_cast<ncnn::Mat*>(m_v);
     if (m.empty() || m.dims != 2) return -1;
@@ -162,7 +162,7 @@ int armbench_ncnn_mat_read_2d(void* m_v, float* out)
     return 0;
 }
 
-int armbench_ncnn_mat_read_1d(void* m_v, float* out)
+int kernelshift_ncnn_mat_read_1d(void* m_v, float* out)
 {
     const auto& m = *reinterpret_cast<ncnn::Mat*>(m_v);
     if (m.empty() || m.dims != 1) return -1;
@@ -172,7 +172,7 @@ int armbench_ncnn_mat_read_1d(void* m_v, float* out)
 
 // Read a 3D int8 Mat (c, h, w) into a flat C-major int8 buffer. Returns 0 on
 // success, -1 on shape mismatch.
-int armbench_ncnn_mat_read_3d_i8(void* m_v, int8_t* out)
+int kernelshift_ncnn_mat_read_3d_i8(void* m_v, int8_t* out)
 {
     const auto& m = *reinterpret_cast<ncnn::Mat*>(m_v);
     if (m.empty() || m.dims != 3) return -1;
@@ -187,7 +187,7 @@ int armbench_ncnn_mat_read_3d_i8(void* m_v, int8_t* out)
 
 // Default Option for every ncnn baseline:
 //   num_threads=1, no packing, no fp16/bf16, no sgemm/winograd shortcuts.
-void* armbench_ncnn_option_create_default()
+void* kernelshift_ncnn_option_create_default()
 {
     auto* opt = new ncnn::Option();
     opt->num_threads = 1;
@@ -199,7 +199,7 @@ void* armbench_ncnn_option_create_default()
     return opt;
 }
 
-void armbench_ncnn_option_destroy(void* opt_v)
+void kernelshift_ncnn_option_destroy(void* opt_v)
 {
     delete reinterpret_cast<ncnn::Option*>(opt_v);
 }

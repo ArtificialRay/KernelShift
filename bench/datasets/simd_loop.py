@@ -1,7 +1,7 @@
 """simd-loop dataset adapter: numpy ↔ flat C arrays via ctypes.
 
 Calling convention for every loop:
-    int armbench_entry_loop_NNN(void* in1, [void* in2, ...], [void* scratch, ...], int64_t n, void* res_out)
+    int kernelshift_entry_loop_NNN(void* in1, [void* in2, ...], [void* scratch, ...], int64_t n, void* res_out)
 
 For scalar-output loops:  res_out → single scalar value written by the kernel.
 For array-output loops:   res_out → pre-allocated array of N elements (the output buffer).
@@ -77,7 +77,7 @@ class SimdLoopDataset:
         output_is_array = out_spec.shape is not None
 
         # Multi-axis loops (m/n/k):
-        # armbench_entry(in1, ..., int64_t axis0, axis1, ..., void* res_out)
+        # kernelshift_entry(in1, ..., int64_t axis0, axis1, ..., void* res_out)
         if meta.axes_order:
             arrays = [np.ascontiguousarray(np_inputs[name]) for name in definition.inputs]
             # Recover concrete axis sizes from three sources, in precedence order:

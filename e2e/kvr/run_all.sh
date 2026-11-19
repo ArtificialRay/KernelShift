@@ -22,7 +22,7 @@ for k in json.load(open(sys.argv[1]))["kernels"]:
     if k.get("op", "mul_mat") != "mul_mat":
         continue
     name = k.get("definition") or f"gemm_ggml_{k['type']}_n{k['N']}_k{k['K']}"
-    print(k["type"], k["N"], k["K"], k["so"], k.get("symbol", "armbench_llamacpp_gemm"), k.get("abi", "llamacpp"), name)
+    print(k["type"], k["N"], k["K"], k["so"], k.get("symbol", "kernelshift_llamacpp_gemm"), k.get("abi", "llamacpp"), name)
 EOF
 
 echo "[run_all] $(wc -l < "$OUT.todo") shapes -> $OUT" >&2

@@ -68,7 +68,7 @@ build/bin/llama-bench -m model.gguf
       "K": 2560,
       "N": 9216,
       "so": "/abs/lib.so",
-      "symbol": "armbench_llamacpp_gemm",
+      "symbol": "kernelshift_llamacpp_gemm",
       "abi": "llamacpp"
     },
     {
@@ -77,7 +77,7 @@ build/bin/llama-bench -m model.gguf
       "K": 9216,
       "N": 2560,
       "so": "/abs/lib2.so",
-      "symbol": "armbench_entry_gemm",
+      "symbol": "kernelshift_entry_gemm",
       "abi": "entry"
     },
     {
@@ -86,8 +86,8 @@ build/bin/llama-bench -m model.gguf
       "K": 2560,
       "N": 2560,
       "so": "/abs/lib3.so",
-      "symbol": "armbench_entry_gemm",
-      "symbol_rows": "armbench_entry_gemm_rows",
+      "symbol": "kernelshift_entry_gemm",
+      "symbol_rows": "kernelshift_entry_gemm_rows",
       "abi": "entry_rows"
     }
   ]
@@ -105,15 +105,15 @@ build/bin/llama-bench -m model.gguf
 | --- | --- | --- |
 | **`llamacpp`**<br>
 
-<br>*(Default)* | `int armbench_llamacpp_gemm(const void* A, const void* B, float* C, int64_t M, int64_t N, int64_t K)` | Single-threaded (Thread 0) |
-| **`entry`** | `int armbench_entry_gemm(const uint16_t* A_bf16, float* output, const uint8_t* B_blocks, int M)`<br>
+<br>*(Default)* | `int kernelshift_llamacpp_gemm(const void* A, const void* B, float* C, int64_t M, int64_t N, int64_t K)` | Single-threaded (Thread 0) |
+| **`entry`** | `int kernelshift_entry_gemm(const uint16_t* A_bf16, float* output, const uint8_t* B_blocks, int M)`<br>
 
 <br>• $N$ and $K$ baked in as `constexpr`<br>
 
 <br>• Reference-scalar harness layout | Single-threaded (Thread 0) |
 | **`entry_rows`** | Requires two exported functions (`symbol` and `symbol_rows`):<br>
 
-<br>`int armbench_entry_gemm_rows(const uint16_t* A_bf16, float* output, const uint8_t* B_blocks, int M, int n_rows)`<br>
+<br>`int kernelshift_entry_gemm_rows(const uint16_t* A_bf16, float* output, const uint8_t* B_blocks, int M, int n_rows)`<br>
 
 <br>• Computes weight rows `[0, n_rows)` relative to `B_blocks`<br>
 

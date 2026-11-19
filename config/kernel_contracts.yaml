@@ -17,12 +17,10 @@ contracts:
 
 # dataset -> the Solution.author tag for that dataset's reference/starting-point
 # scalar kernel (what an agent begins from, NOT the speedup baseline below).
-# simd-loop intentionally uses "reference" instead of "reference-scalar" — a
-# naming difference, not a typo.
 reference_scalar_authors:
   ncnn: "reference-scalar"
   llama.cpp: "reference-scalar"
-  simd-loop: "reference"
+  simd-loop: "reference-scalar"
   kleidiai: "reference-scalar"
 
 # dataset -> the Solution.author tag for the competitive speedup baseline
@@ -30,17 +28,17 @@ reference_scalar_authors:
 # Used as-is for every dataset except where baseline_authors_by_isa below
 # declares a tier-specific override for the current session's isa.
 baseline_authors_default:
-  ncnn: "baseline-ncnn-arm"
-  simd-loop: "baseline-sve"
-  llama.cpp: "baseline-llamacpp-arm"
-  kleidiai: "baseline-kleidiai-arm"
+  ncnn: "baseline-ncnn"
+  simd-loop: "baseline-simd-loop-sve"
+  llama.cpp: "baseline-llamacpp"
+  kleidiai: "baseline-kleidiai"
 
 # dataset -> isa -> baseline author, for datasets with a separate baseline
 # implementation per isa tier.
 baseline_authors_by_isa:
   simd-loop:
-    sve2: "baseline-sve2"
-    sme2: "baseline-sme2"
+    sve2: "baseline-simd-loop-sve2"
+    sme2: "baseline-simd-loop-sme2"
 
 # bench/config.py's BenchmarkConfig/EvalConfig field defaults. baseline_author
 # intentionally isn't duplicated here — it reuses baseline_authors_default.ncnn above.

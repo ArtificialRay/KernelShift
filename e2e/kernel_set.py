@@ -10,8 +10,8 @@ submitted, or a hand-written / reference-scalar set. Each solution carries its o
 
   {"framework":"llamacpp", "isa":..., "march":..., "author":...,
    "kernels":[{"op":"mul_mat","type":"q4_K","K":2560,"N":9216,
-               "so":".../gemm_q4_K_n9216_k2560.so",
-               "symbol":"armbench_entry_gemm","abi":"entry",
+               "so":".../gemm_ggml_q4_K_n9216_k2560.so",
+               "symbol":"kernelshift_entry_gemm","abi":"entry",
                "embeddable":true, "definition":..., "version":...}],
    "skipped":[{"definition":..., "embeddable":false, "reason":...}, ...]}
 
@@ -57,19 +57,19 @@ FRAMEWORK = "llamacpp"
 
 RT_GEMM_CPP = """// Binding harness, runtime-N variant (rows ABI).
 // N lives in a thread_local so the e2e override can hand each ggml thread a row range:
-//   armbench_entry_gemm(A, out, B, M)             -> all N_FULL rows (out stride N_FULL)
-//   armbench_entry_gemm_rows(A, out, B, M, n_rows) -> rows [0, n_rows) of B, out stride n_rows
+//   kernelshift_entry_gemm(A, out, B, M)             -> all N_FULL rows (out stride N_FULL)
+//   kernelshift_entry_gemm_rows(A, out, B, M, n_rows) -> rows [0, n_rows) of B, out stride n_rows
 #include "gemm.h"
 namespace gemm_def { thread_local int N = N_FULL; }
 using namespace gemm_def;
 
-extern "C" int armbench_entry_gemm(const uint16_t* A, float* output, const uint8_t* B_blocks, int M)
+extern "C" int kernelshift_entry_gemm(const uint16_t* A, float* output, const uint8_t* B_blocks, int M)
 {
     gemm_def::N = N_FULL;
     inner_gemm(A, output, B_blocks, M);
     return 0;
 }
-extern "C" int armbench_entry_gemm_rows(const uint16_t* A, float* output, const uint8_t* B_blocks, int M, int n_rows)
+extern "C" int kernelshift_entry_gemm_rows(const uint16_t* A, float* output, const uint8_t* B_blocks, int M, int n_rows)
 {
     gemm_def::N = n_rows;
     inner_gemm(A, output, B_blocks, M);
@@ -78,7 +78,7 @@ extern "C" int armbench_entry_gemm_rows(const uint16_t* A, float* output, const 
 """
 
 
-# Every row range the override's N-split hands to armbench_entry_gemm_rows is a multiple of this many
+# Every row range the override's N-split hands to kernelshift_entry_gemm_rows is a multiple of this many
 # rows (ARMBENCH_N_CHUNK in override/armbench_override.c; 128 when M > 1).
 ROWS_GRANULE = 64
 
@@ -252,7 +252,7 @@ def build_kernels(solutions: dict, author: str, out_dir: Path, march: str, *, se
             print(f"  {name}: SKIPPED -- calls ggml internals ({', '.join(bad)})")
             continue
         entry = {"op": "mul_mat", "type": qtype, "K": K, "N": N, "so": str(so),
-                 "symbol": "armbench_entry_gemm", "abi": abi}
+                 "symbol": "kernelshift_entry_gemm", "abi": abi}
         if abi == "entry_rows" and row_multiple > 1:
             entry["row_multiple"] = row_multiple
         kernels.append({**entry, "embeddable": True, "definition": name, "version": f"solutions/{author}"})
@@ -280,7 +280,7 @@ def build_kernel_set(
                      list), each of which must carry the tag `e2e:<model>` and have a solution of the author
     march            override the ISA's -march
     rows_abi         recompile each kernel with N as a runtime thread_local and export
-                     armbench_entry_gemm_rows(A,out,B,M,n_rows) too (manifest abi 'entry_rows'), so the
+                     kernelshift_entry_gemm_rows(A,out,B,M,n_rows) too (manifest abi 'entry_rows'), so the
                      override can split rows across ggml's threads; a kernel that does not compile that
                      way keeps the single-thread 'entry' ABI
     The remaining keyword arguments are the guards (see the module docstring).

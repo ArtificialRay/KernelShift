@@ -19,7 +19,7 @@ For every quant type this module can emit, for a new (N, K) shape:
   * the `reference-scalar` solution sources (gemm.h / gemm.cpp / kernel.cpp),
     whose kernel mirrors ggml's vec_dot_qX_K_q8_K: dynamic Q8_K-style
     activation quantization then integer dot products,
-  * the `baseline-llamacpp-arm` solution sources (gemm.h / binding.cpp /
+  * the `baseline-llamacpp` solution sources (gemm.h / binding.cpp /
     kernel.cpp), which run ggml_mul_mat on a GGML_TYPE_QX_K tensor,
   * the per-author `spec` block and `description` (and `solution_json`
     assembling a whole solution file).
@@ -549,11 +549,11 @@ void inner_gemm(const uint16_t* A, float* output, const uint8_t* B_q6,
 
 _RS_GEMM_CPP = {
     "q4_k_m": """// Binding harness: forwards straight to inner_gemm (no derived dims needed).
-// ABI: armbench_entry_gemm(A*, output*, B_q4*, B_scales*, B_mins*, M)
+// ABI: kernelshift_entry_gemm(A*, output*, B_q4*, B_scales*, B_mins*, M)
 #include "gemm.h"
 using namespace gemm_def;
 
-extern "C" int armbench_entry_gemm(const uint16_t* A, float* output,
+extern "C" int kernelshift_entry_gemm(const uint16_t* A, float* output,
                                     const uint8_t* B_q4, const uint16_t* B_scales,
                                     const uint16_t* B_mins, int M)
 {
@@ -562,11 +562,11 @@ extern "C" int armbench_entry_gemm(const uint16_t* A, float* output,
 }
 """,
     "q5_k": """// Binding harness: forwards straight to inner_gemm (no derived dims needed).
-// ABI: armbench_entry_gemm(A*, output*, B_q5*, B_scales*, B_mins*, M)
+// ABI: kernelshift_entry_gemm(A*, output*, B_q5*, B_scales*, B_mins*, M)
 #include "gemm.h"
 using namespace gemm_def;
 
-extern "C" int armbench_entry_gemm(const uint16_t* A, float* output,
+extern "C" int kernelshift_entry_gemm(const uint16_t* A, float* output,
                                     const uint8_t* B_q5, const uint16_t* B_scales,
                                     const uint16_t* B_mins, int M)
 {
@@ -575,11 +575,11 @@ extern "C" int armbench_entry_gemm(const uint16_t* A, float* output,
 }
 """,
     "q6_k": """// Binding harness: forwards straight to inner_gemm (no derived dims needed).
-// ABI: armbench_entry_gemm(A*, output*, B_q6*, B_scales*, B_d*, M)
+// ABI: kernelshift_entry_gemm(A*, output*, B_q6*, B_scales*, B_d*, M)
 #include "gemm.h"
 using namespace gemm_def;
 
-extern "C" int armbench_entry_gemm(const uint16_t* A, float* output,
+extern "C" int kernelshift_entry_gemm(const uint16_t* A, float* output,
                                     const uint8_t* B_q6, const int8_t* B_scales,
                                     const uint16_t* B_d, int M)
 {
@@ -927,11 +927,11 @@ void inner_gemm(const uint16_t* A, float* output, const uint8_t* B_blocks, int M
 """
 
 _RS_GGML_GEMM_CPP = """// Binding harness: forwards straight to inner_gemm (no derived dims needed).
-// ABI: armbench_entry_gemm(A*, output*, B_blocks*, M)
+// ABI: kernelshift_entry_gemm(A*, output*, B_blocks*, M)
 #include "gemm.h"
 using namespace gemm_def;
 
-extern "C" int armbench_entry_gemm(const uint16_t* A, float* output,
+extern "C" int kernelshift_entry_gemm(const uint16_t* A, float* output,
                                     const uint8_t* B_blocks, int M)
 {
     inner_gemm(A, output, B_blocks, M);
@@ -1313,19 +1313,19 @@ def reference_scalar_sources(qt: str, N: int, K: int, layout: str = "flat") -> L
     ]
 
 
-# ─── baseline-llamacpp-arm sources ───────────────────────────────────────────
+# ─── baseline-llamacpp sources ───────────────────────────────────────────
 
 _BL_GEMM_H = """#pragma once
 #include <cstdint>
 
 // Harness contract for the llama.cpp (ggml) gemm baseline.
-// Called by armbench_entry_gemm (binding.cpp); implemented by kernel.cpp.
+// Called by kernelshift_entry_gemm (binding.cpp); implemented by kernel.cpp.
 // A is row-major [M, K], B is row-major [N, K], C = A . B^T row-major [M, N].
 // A is bf16 (raw uint16 bit pattern, one value per K element -- NOT
 // block-quantized; weight-only ${GGML} design keeps activations at the bf16
 // baseline tier). B is a ggml block_${ggml} row: (K/${BLOCK_ELEMS}) ${BLOCK_BYTES}-byte blocks per
 // row, ${BLOCK_STRUCT} (${B_ORIGIN}).
-int armbench_llamacpp_gemm(const void* A, const void* B, float* C,
+int kernelshift_llamacpp_gemm(const void* A, const void* B, float* C,
                            int64_t M, int64_t N, int64_t K);
 """
 
@@ -1339,10 +1339,10 @@ constexpr int64_t kK = ${K};
 extern "C" {
 // inputs: [0]=A bf16 [M,K], [1]=B block_${ggml} [N, K/${BLOCK_ELEMS} blocks]${INPUT_TAIL}
 // var_axes: [0]=M
-int armbench_entry_gemm(const void* const* inputs, void* output,
+int kernelshift_entry_gemm(const void* const* inputs, void* output,
                         const int64_t* var_axes)
 {
-    return armbench_llamacpp_gemm(inputs[0], inputs[1],
+    return kernelshift_llamacpp_gemm(inputs[0], inputs[1],
                                   reinterpret_cast<float*>(output),
                                   var_axes[0], kN, kK);
 }
@@ -1395,7 +1395,7 @@ std::vector<float> g_A_f32;
 std::vector<uint8_t> g_work;
 } // namespace
 
-int armbench_llamacpp_gemm(const void* A_bf16, const void* B, float* C,
+int kernelshift_llamacpp_gemm(const void* A_bf16, const void* B, float* C,
                            int64_t M, int64_t N, int64_t K)
 {
     if (M != g_cached_M || A_bf16 != g_cached_A || B != g_cached_B) {
@@ -1479,26 +1479,26 @@ def baseline_sources(qt: str, N: int, K: int, layout: str = "flat") -> List[Dict
 
 # ─── solution metadata ───────────────────────────────────────────────────────
 
-AUTHORS = ("reference-scalar", "baseline-llamacpp-arm")
+AUTHORS = ("reference-scalar", "baseline-llamacpp")
 
 _SPEC = {
     "reference-scalar": {
         "language": "cpp",
         "target_hardware": ["graviton3", "aarch64-sve"],
-        "entry_point": "gemm.cpp::armbench_entry_gemm",
+        "entry_point": "gemm.cpp::kernelshift_entry_gemm",
         "dependencies": [],
         "isa_features": [],
         "compile_flags": ["-O2", "-std=c++14"],
         "link_flags": [],
     },
-    "baseline-llamacpp-arm": {
+    "baseline-llamacpp": {
         "language": "cpp",
         "target_hardware": ["graviton3", "aarch64-sve", "graviton4", "aarch64-sve2", "apple-m"],
         "dependencies": [],
         "isa_features": [],
         "compile_flags": ["-O3", "-std=c++17"],
         "link_flags": [],
-        "entry_point": "binding.cpp::armbench_entry_gemm",
+        "entry_point": "binding.cpp::kernelshift_entry_gemm",
     },
 }
 
@@ -1523,11 +1523,11 @@ def description(qt: str, author: str, N: int, K: int, layout: str = "flat") -> s
     if author == "reference-scalar":
         return (
             f"Scalar raw-pointer gemm for {name}. Constexpr-baked dims; "
-            f"armbench_entry_gemm calls inner_gemm. Ground-truth correctness baseline."
+            f"kernelshift_entry_gemm calls inner_gemm. Ground-truth correctness baseline."
         )
     return (
         f"llama.cpp (ggml) {_GGML[qt]} baseline for {name}. binding.cpp bakes the "
-        f"const axes as constexpr and implements armbench_entry_gemm over the void* "
+        f"const axes as constexpr and implements kernelshift_entry_gemm over the void* "
         f"ABI; kernel.cpp builds + runs the ggml graph against libggml*.a. Timing "
         f"baseline for speedup computation."
     )

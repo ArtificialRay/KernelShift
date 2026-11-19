@@ -54,7 +54,7 @@ terraform/.terraform/
 terraform/terraform.tfstate
 terraform/terraform.tfstate.*
 terraform/.terraform.lock.hcl
-terraform/.armbench.lock
+terraform/.kernelshift.lock
 .terraform
 
 .env

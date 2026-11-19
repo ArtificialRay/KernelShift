@@ -64,7 +64,7 @@ _COMPILE_SCHEMA = {
                     "definition — it's a working scalar reference implementation "
                     "showing the exact function name and signature you must "
                     "implement (naming convention varies by dataset, e.g. "
-                    "`inner_<op_type>` vs `armbench_llamacpp_<op_type>(...)`). "
+                    "`inner_<op_type>` vs `kernelshift_llamacpp_<op_type>(...)`). "
                     "Replace its body with an optimized SIMD version; keep the "
                     "same signature. Harness/binding files are provided "
                     "automatically."

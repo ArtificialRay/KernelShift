@@ -2,7 +2,7 @@
 framework-specific builder wants: all candidates, plus any dataset whose true
 baseline also has no framework dependency of its own (e.g. kleidiai — see
 SupportedDatasets.KLEIDIAI). Each solution embeds its own
-`armbench_entry_<op>` binding in its sources.
+`kernelshift_entry_<op>` binding in its sources.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ class CandidateBuilder(Builder):
     """Builds candidate (non-baseline) kernels against the raw `float*` ABI."""
 
     def __init__(self) -> None:
-        super().__init__(build_dir_name="armbench-cand")
+        super().__init__(build_dir_name="kernelshift-cand")
 
     def can_build(self, solution: Solution, is_baseline: bool) -> bool:
         """Unconditional fallback: tried last in registry.py's

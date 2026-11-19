@@ -15,7 +15,7 @@ expert implementation.
 | [KleidiAI](https://gitlab.arm.com/kleidi/kleidiai) | GEMM and convolution micro-kernels | 10 |
 
 The tasks live in the Hugging Face dataset
-[`arm-bench/arm-bench-trace`](https://huggingface.co/datasets/arm-bench/arm-bench-trace).
+[`arm-bench/KernelShift`](https://huggingface.co/datasets/arm-bench/KernelShift).
 Its `TASKS.md` lists, for every definition, the expert baseline on each hardware
 tier and whether it runs there.
 
@@ -27,7 +27,7 @@ Python 3.12 or later, and `clang++` (Apple clang works on macOS).
 git clone https://github.com/ArtificialRay/CPU-Kernel-Baseline && cd CPU-Kernel-Baseline
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-hf download arm-bench/arm-bench-trace --repo-type dataset --local-dir bench-trace
+hf download arm-bench/KernelShift --repo-type dataset --local-dir bench-trace
 ```
 
 Every tool reads the dataset from `bench-trace/`. Check that it loaded:
@@ -47,7 +47,7 @@ $ python -m bench.cli summary
 workload and times it. No AWS account or agent is involved.
 
 ```console
-$ python -m bench.cli bench --definition loop_001 --solution reference_loop_001 --dataset simd-loop --isa sve
+$ python -m bench.cli bench --definition loop_001 --solution reference-scalar_loop_001 --dataset simd-loop --isa sve
   6bfe094b  PASSED  min=9.08us  p5=9.15us  max_abs=0.00e+00  max_rel=0.00e+00
   06735e72  PASSED  min=43.30us  p5=43.82us  max_abs=0.00e+00  max_rel=0.00e+00
   ...

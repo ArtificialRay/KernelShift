@@ -8,8 +8,8 @@ shim fused into `solution.sources`, so the builder injects nothing from disk.
 
 Fused-harness convention (solution.sources carries <op_type>.{h,cpp}):
   - The .h declares `struct loop_NNN_data` and
-    `extern "C" int armbench_entry_loop_NNN(void*, void*, int64_t, void*)`.
-  - The .cpp defines `armbench_entry_loop_NNN`, which fills the struct and calls
+    `extern "C" int kernelshift_entry_loop_NNN(void*, void*, int64_t, void*)`.
+  - The .cpp defines `kernelshift_entry_loop_NNN`, which fills the struct and calls
     `inner_loop_NNN(&data)` — the symbol the solution's kernel source exports.
   - The solution must define `inner_loop_NNN` as `extern "C"` (not static).
 """
@@ -28,7 +28,7 @@ from ..builder import Builder, CompileError, CompileResult
 
 class SimdLoopBuilder(Builder):
     def __init__(self) -> None:
-        super().__init__(build_dir_name="armbench-simdloop")
+        super().__init__(build_dir_name="kernelshift-simdloop")
 
     def can_build(self, solution: Solution, is_baseline: bool) -> bool:
         return solution.dataset == SupportedDatasets.SIMD_LOOP

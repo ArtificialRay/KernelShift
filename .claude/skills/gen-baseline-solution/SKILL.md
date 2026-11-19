@@ -6,10 +6,10 @@ description: Write a baseline solution (the real library's own kernel behind the
 ## gen_baseline_solution
 
 A baseline solution calls the real library (ncnn's `*_arm` layers, ggml, KleidiAI) behind the
-benchmark's `armbench_entry_<op_type>` ABI. It is the timing baseline for speedups and, because
+benchmark's `kernelshift_entry_<op_type>` ABI. It is the timing baseline for speedups and, because
 it is the library's own code, the check that a definition's reference describes the real
 operator. Each solution JSON embeds three sources: a contract header, `binding.cpp`
-(`armbench_entry_<op_type>`, the ABI shim with per-definition constants baked in) and `kernel.cpp`
+(`kernelshift_entry_<op_type>`, the ABI shim with per-definition constants baked in) and `kernel.cpp`
 (the library call).
 
 You are going to write the solution JSON, using the
@@ -32,9 +32,9 @@ closest existing baseline of the same dataset as the pattern, then place it with
 
 | Backend | dataset | author (`config/kernel_contracts.yaml`) | builder | flags |
 |---|---|---|---|---|
-| ncnn | `ncnn` | `baseline-ncnn-arm` | `NcnnBuilder`, links `libncnn.a` | `-O3 -std=c++17`, link `-fopenmp` |
-| llama.cpp | `llama.cpp` | `baseline-llamacpp-arm` | `LlamaCppBuilder`, links ggml static libs | `-O3 -std=c++17` (+ `-march=...` as the dtype needs) |
-| KleidiAI | `kleidiai` | `baseline-kleidiai-arm` | see an existing solution | - |
+| ncnn | `ncnn` | `baseline-ncnn` | `NcnnBuilder`, links `libncnn.a` | `-O3 -std=c++17`, link `-fopenmp` |
+| llama.cpp | `llama.cpp` | `baseline-llamacpp` | `LlamaCppBuilder`, links ggml static libs | `-O3 -std=c++17` (+ `-march=...` as the dtype needs) |
+| KleidiAI | `kleidiai` | `baseline-kleidiai` | see an existing solution | - |
 
   A new backend needs its builder in `bench/compile/builders/` first; confirm scope with the
   user before starting.
@@ -46,15 +46,15 @@ closest existing baseline of the same dataset as the pattern, then place it with
 
 ```json
 {
-  "name":        "baseline-ncnn-arm_<def_name>",
+  "name":        "baseline-ncnn_<def_name>",
   "definition":  "<def_name>",
   "dataset":     "ncnn",
-  "author":      "baseline-ncnn-arm",
-  "description": "baseline-ncnn-arm baseline for <def_name>. binding.cpp bakes constexpr params and implements armbench_entry_<op_type> with a void* ABI; kernel.cpp delegates to the backend library. Timing baseline for speedup computation.",
+  "author":      "baseline-ncnn",
+  "description": "baseline-ncnn baseline for <def_name>. binding.cpp bakes constexpr params and implements kernelshift_entry_<op_type> with a void* ABI; kernel.cpp delegates to the backend library. Timing baseline for speedup computation.",
   "spec": {
     "language":        "cpp",
     "target_hardware": ["graviton3", "aarch64-sve", "graviton4", "aarch64-sve2"],
-    "entry_point":     "binding.cpp::armbench_entry_<op_type>",
+    "entry_point":     "binding.cpp::kernelshift_entry_<op_type>",
     "dependencies":    [],
     "isa_features":    [],
     "compile_flags":   ["-O3", "-std=c++17"],
@@ -62,7 +62,7 @@ closest existing baseline of the same dataset as the pattern, then place it with
   },
   "sources": [
     { "path": "<op_type>_contract.h", "content": "// contract fn signature" },
-    { "path": "binding.cpp",          "content": "// armbench_entry_<op_type>" },
+    { "path": "binding.cpp",          "content": "// kernelshift_entry_<op_type>" },
     { "path": "kernel.cpp",           "content": "// contract fn implemented with the library" }
   ]
 }
@@ -70,7 +70,7 @@ closest existing baseline of the same dataset as the pattern, then place it with
 
 - `name` is `<author>_<definition>`; the author must equal the baseline author the benchmark
   is run with (`Benchmark._is_baseline()` compares `solution.author` to it).
-- `entry_point` is `binding.cpp::armbench_entry_<op_type>`; pointing at `kernel.cpp` is a
+- `entry_point` is `binding.cpp::kernelshift_entry_<op_type>`; pointing at `kernel.cpp` is a
   duplicate-symbol link error.
 - The builder takes the baseline path only for `is_baseline` plus the matching dataset; keep
   `dataset` as the table says.
@@ -129,7 +129,7 @@ Library-specific symptoms (uninitialized fields, scale conventions, missing libr
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | Garbled args or SIGSEGV on entry | Entry parameter list differs from what the dataset adapter builds for this definition | Re-derive tensor order and dtypes from the adapter's `wrap_inputs` |
-| Duplicate symbol at link | `entry_point` points at `kernel.cpp` | `binding.cpp::armbench_entry_<op_type>` |
+| Duplicate symbol at link | `entry_point` points at `kernel.cpp` | `binding.cpp::kernelshift_entry_<op_type>` |
 | `name: expected <author>_<definition>` | Wrong `name` | Fix it |
 | `definition ... is not in the warehouse` | Definition not added yet | `kgen add definition` first |
 | Baseline is not picked up as the baseline | `author` differs from the baseline author the run uses | Use the author from `config/kernel_contracts.yaml` |

@@ -131,8 +131,8 @@ def detect_techniques(text: str):
 def baseline_hash(dataset: str, name: str):
     """Content hash of the local baseline kernel this run was (nominally) scored
     against — so runs are comparable across baseline changes. Best-effort."""
-    auth = {"llama.cpp": "baseline-llamacpp-arm", "ncnn": "baseline-ncnn-arm",
-            "simd-loop": "reference"}.get(dataset)
+    auth = {"llama.cpp": "baseline-llamacpp", "ncnn": "baseline-ncnn",
+            "simd-loop": "reference-scalar"}.get(dataset)
     if not auth:
         return None
     hits = glob.glob(f"bench-trace/solutions/{dataset}/{auth}/*/{name}.json")

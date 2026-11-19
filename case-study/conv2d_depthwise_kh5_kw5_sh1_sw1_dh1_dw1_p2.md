@@ -57,7 +57,7 @@ else if (kernel_w == 5 && kernel_h == 5 && dilation_w == 1 && dilation_h == 1 &&
     convdw5x5s1_pack4_neon(bottom_blob_bordered, top_blob, weight_data_tm, bias_data, opt);
 ```
 
-The harness (`baseline-ncnn-arm/.../kernel.cpp`) calls `convert_packing(bottom_blob, bottom_pack4, 4, opt4)` when C % 4 == 0 (all workloads except C=11). This rearranges the input from `(C, H, W)` to `(C/4, H, W, 4)` — four channels packed contiguously at every spatial position.
+The harness (`baseline-ncnn/.../kernel.cpp`) calls `convert_packing(bottom_blob, bottom_pack4, 4, opt4)` when C % 4 == 0 (all workloads except C=11). This rearranges the input from `(C, H, W)` to `(C/4, H, W, 4)` — four channels packed contiguously at every spatial position.
 
 `convdw5x5s1_pack4_neon` (`convolutiondepthwise_5x5_pack4.h:4–740`) then:
 1. **Processes 4 channels simultaneously** — each `vld1q_f32(r0)` loads 4 channels from one spatial location; `vmlaq_f32(_sum00, _k00, _r00)` accumulates all 4 channels at once.
