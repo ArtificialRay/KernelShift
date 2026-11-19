@@ -83,7 +83,7 @@ class LlamaCppBuilder(Builder):
     """Builds llama.cpp baseline solutions against the ggml static libs."""
 
     def __init__(self) -> None:
-        super().__init__(build_dir_name="armbench-llamacpp")
+        super().__init__(build_dir_name="kernelshift-llamacpp")
         self._arm_bench_root = Path(__file__).resolve().parents[3]  # repo dir
 
     def can_build(self, solution: Solution, is_baseline: bool) -> bool:

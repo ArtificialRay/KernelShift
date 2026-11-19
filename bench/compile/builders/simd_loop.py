@@ -28,7 +28,7 @@ from ..builder import Builder, CompileError, CompileResult
 
 class SimdLoopBuilder(Builder):
     def __init__(self) -> None:
-        super().__init__(build_dir_name="armbench-simdloop")
+        super().__init__(build_dir_name="kernelshift-simdloop")
 
     def can_build(self, solution: Solution, is_baseline: bool) -> bool:
         return solution.dataset == SupportedDatasets.SIMD_LOOP

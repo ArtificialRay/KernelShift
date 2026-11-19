@@ -74,7 +74,7 @@ def _elog(msg: str) -> None:
 
 
 def build_server(tools: KernelSessionLike) -> Server:
-    server: Server = Server("armbench-kernel-session")
+    server: Server = Server("kernelshift-kernel-session")
 
     @server.list_tools()
     async def _list_tools() -> list[types.Tool]:

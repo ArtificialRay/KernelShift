@@ -5,7 +5,7 @@ The C-side implementation of these factory functions lives in
 (`bench/compile/builders/ncnn.py`) compiles into every solution.so build. The
 dlopened .so therefore exports both:
   - kernelshift_entry_<op_type>  (from the solution's own sources)
-  - armbench_ncnn_mat_*       (from _mat_factory.cpp, bound here per .so)
+  - kernelshift_ncnn_mat_*       (from _mat_factory.cpp, bound here per .so)
 Every ncnn baseline ships a self-contained kernelshift_entry_<op_type> that bakes
 its scalar params as constexpr, so the entry takes only Mat/Option pointers:
 one per non-scalar tensor in `definition.inputs`, plus the output and Option.
@@ -24,7 +24,7 @@ import numpy as np
 
 @dataclass
 class _MatFactoryFns:
-    """ctypes bindings to the armbench_ncnn_* symbols in a loaded .so."""
+    """ctypes bindings to the kernelshift_ncnn_* symbols in a loaded .so."""
 
     create_3d: Any
     create_2d: Any
@@ -58,37 +58,37 @@ class _MatFactoryFns:
         c_float_p = ctypes.POINTER(ctypes.c_float)
         c_int8_p = ctypes.POINTER(ctypes.c_int8)
         return cls(
-            create_3d=_bind("armbench_ncnn_mat_create_3d", ctypes.c_void_p,
+            create_3d=_bind("kernelshift_ncnn_mat_create_3d", ctypes.c_void_p,
                             [ctypes.c_int, ctypes.c_int, ctypes.c_int, c_float_p]),
-            create_2d=_bind("armbench_ncnn_mat_create_2d", ctypes.c_void_p,
+            create_2d=_bind("kernelshift_ncnn_mat_create_2d", ctypes.c_void_p,
                             [ctypes.c_int, ctypes.c_int, c_float_p]),
-            create_1d=_bind("armbench_ncnn_mat_create_1d", ctypes.c_void_p,
+            create_1d=_bind("kernelshift_ncnn_mat_create_1d", ctypes.c_void_p,
                             [ctypes.c_int, c_float_p]),
-            create_3d_i8=_bind("armbench_ncnn_mat_create_3d_i8", ctypes.c_void_p,
+            create_3d_i8=_bind("kernelshift_ncnn_mat_create_3d_i8", ctypes.c_void_p,
                                [ctypes.c_int, ctypes.c_int, ctypes.c_int, c_int8_p]),
-            create_2d_i8=_bind("armbench_ncnn_mat_create_2d_i8", ctypes.c_void_p,
+            create_2d_i8=_bind("kernelshift_ncnn_mat_create_2d_i8", ctypes.c_void_p,
                                [ctypes.c_int, ctypes.c_int, c_int8_p]),
-            create_1d_i8=_bind("armbench_ncnn_mat_create_1d_i8", ctypes.c_void_p,
+            create_1d_i8=_bind("kernelshift_ncnn_mat_create_1d_i8", ctypes.c_void_p,
                                [ctypes.c_int, c_int8_p]),
-            create_empty=_bind("armbench_ncnn_mat_create_empty", ctypes.c_void_p, []),
-            destroy=_bind("armbench_ncnn_mat_destroy", None, [ctypes.c_void_p]),
-            read_3d=_bind("armbench_ncnn_mat_read_3d", ctypes.c_int,
+            create_empty=_bind("kernelshift_ncnn_mat_create_empty", ctypes.c_void_p, []),
+            destroy=_bind("kernelshift_ncnn_mat_destroy", None, [ctypes.c_void_p]),
+            read_3d=_bind("kernelshift_ncnn_mat_read_3d", ctypes.c_int,
                           [ctypes.c_void_p, c_float_p]),
-            read_2d=_bind("armbench_ncnn_mat_read_2d", ctypes.c_int,
+            read_2d=_bind("kernelshift_ncnn_mat_read_2d", ctypes.c_int,
                           [ctypes.c_void_p, c_float_p]),
-            read_1d=_bind("armbench_ncnn_mat_read_1d", ctypes.c_int,
+            read_1d=_bind("kernelshift_ncnn_mat_read_1d", ctypes.c_int,
                           [ctypes.c_void_p, c_float_p]),
-            read_3d_i8=_bind("armbench_ncnn_mat_read_3d_i8", ctypes.c_int,
+            read_3d_i8=_bind("kernelshift_ncnn_mat_read_3d_i8", ctypes.c_int,
                              [ctypes.c_void_p, c_int8_p]),
-            dims=_bind("armbench_ncnn_mat_dims", ctypes.c_int, [ctypes.c_void_p]),
-            w=_bind("armbench_ncnn_mat_w", ctypes.c_int, [ctypes.c_void_p]),
-            h=_bind("armbench_ncnn_mat_h", ctypes.c_int, [ctypes.c_void_p]),
-            c=_bind("armbench_ncnn_mat_c", ctypes.c_int, [ctypes.c_void_p]),
-            empty=_bind("armbench_ncnn_mat_empty", ctypes.c_int, [ctypes.c_void_p]),
-            elemsize=_bind("armbench_ncnn_mat_elemsize", ctypes.c_int, [ctypes.c_void_p]),
-            option_default=_bind("armbench_ncnn_option_create_default",
+            dims=_bind("kernelshift_ncnn_mat_dims", ctypes.c_int, [ctypes.c_void_p]),
+            w=_bind("kernelshift_ncnn_mat_w", ctypes.c_int, [ctypes.c_void_p]),
+            h=_bind("kernelshift_ncnn_mat_h", ctypes.c_int, [ctypes.c_void_p]),
+            c=_bind("kernelshift_ncnn_mat_c", ctypes.c_int, [ctypes.c_void_p]),
+            empty=_bind("kernelshift_ncnn_mat_empty", ctypes.c_int, [ctypes.c_void_p]),
+            elemsize=_bind("kernelshift_ncnn_mat_elemsize", ctypes.c_int, [ctypes.c_void_p]),
+            option_default=_bind("kernelshift_ncnn_option_create_default",
                                  ctypes.c_void_p, []),
-            option_destroy=_bind("armbench_ncnn_option_destroy", None,
+            option_destroy=_bind("kernelshift_ncnn_option_destroy", None,
                                  [ctypes.c_void_p]),
         )
 
@@ -187,7 +187,7 @@ def _mat_to_np(fns: _MatFactoryFns, mat_ptr: ctypes.c_void_p) -> np.ndarray:
     else:
         raise ValueError(f"Unexpected Mat dims: {dims}")
     if rc != 0:
-        raise RuntimeError(f"armbench_ncnn_mat_read_{dims}d returned {rc}")
+        raise RuntimeError(f"kernelshift_ncnn_mat_read_{dims}d returned {rc}")
     return out
 
 
@@ -218,7 +218,7 @@ class NcnnDataset:
     name = "ncnn"
 
     def bind_lib(self, lib: ctypes.CDLL) -> _MatFactoryFns:
-        """Bind the armbench_ncnn_* symbols in a freshly-dlopened solution.so."""
+        """Bind the kernelshift_ncnn_* symbols in a freshly-dlopened solution.so."""
         return _MatFactoryFns.from_lib(lib)
 
     def wrap_inputs(

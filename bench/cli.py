@@ -234,7 +234,7 @@ def cmd_list_solutions(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="armbench", description="arm-bench CPU kernel benchmark CLI")
+    p = argparse.ArgumentParser(prog="kernelshift", description="arm-bench CPU kernel benchmark CLI")
     p.add_argument(
         "--root", type=Path, default=_default_root(),
         help="arm-bench root dir (default: inferred from bench/ location).",
