@@ -23,7 +23,8 @@ LAUNCHER_ONLY = {"steps", "here", "fetch", "root", "provision", "instance_type",
 def box_args(ctx: E2EContext, opts: Options, steps: list[str]) -> list[str]:
     """The command line of the box-side run: every option that differs from its default, `--here`
     and the steps to run there."""
-    args = ["--model", ctx.model, "--isa", ctx.isa]
+    # the box keeps the run under the same directory name, so that fetch finds it
+    args = ["--model", ctx.model, "--isa", ctx.isa, "--run-dir", f"e2e-runs/{ctx.run.root.name}"]
     if ctx.force:
         args.append("--force")
     default = Options()
