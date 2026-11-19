@@ -48,7 +48,7 @@ def calibrate_sqnr_floors(root: Path = REPO / "bench-trace", *, author: str, bas
 
     definitions     definition names to calibrate
     tag             also calibrate every definition carrying this tag (e.g. e2e:qwen3.5-4b)
-                    (with neither: every definition tagged correctness:sqnr)
+                    (at least one of definitions / tag is required: with neither it raises KgenError)
     author          whose solution to measure (the reference implementation)
     baseline_author the solution the evaluator scores speedup against (EvalConfig.baseline_author)
     dry_run         measure and print, but don't rewrite the workload files

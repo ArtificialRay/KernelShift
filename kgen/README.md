@@ -46,7 +46,7 @@ A kernel consists of four standard files across three main categories:
 
 Validates a target file and writes it to the repository. If errors exist, it outputs a sentence describing each issue (field, expected, found) and cancels the write.
 
-* **Overwrite Flag:** Use `--replace` if the target file already exists.
+* **Overwrite Flag:** Use `--replace` if the target file already exists (it also precedes the subcommand, e.g., `add --replace solution FILE`).
 * **Root Flag:** Specify `--root <DIR>` (must precede the subcommand, e.g., `add --root custom_path workload ...`).
 
 **Workload Structure:**

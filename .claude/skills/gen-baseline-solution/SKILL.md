@@ -18,7 +18,7 @@ closest existing baseline of the same dataset as the pattern, then place it with
 | Command | Purpose |
 |---|---|
 | `kgen show <def>` | const/var axes, input dtypes, tags, existing solutions |
-| `kgen add solution FILE [--replace]` | lint FILE and write `bench-trace/solutions/<dataset>/<author>/<op_type>/<def>.json` |
+| `kgen add [--replace] solution FILE` | lint FILE and write `bench-trace/solutions/<dataset>/<author>/<op_type>/<def>.json` |
 | `kgen check <def> [--isa ...]` | static lint; on aarch64 builds and runs the baseline against the reference |
 | `kgen autovec --isa <tier> --definitions D... [--baseline-author A]` | (aarch64, the tier's own machine) times the baseline against the compiler's auto-vectorized build of the reference-scalar; flags a baseline more than 2x slower |
 
@@ -105,7 +105,7 @@ gitignored, so it is local knowledge that accumulates; it may be missing or empt
 1. `kgen show <def>`; confirm the `baseline-solution:` tag and read the closest existing baseline.
 2. Write `<def>.json` in the scratchpad (a throwaway snippet can render a whole op type from the
    definition; then `add` each file).
-3. `python -m kgen add solution <file>`; fix what the sentences name; `--replace` to overwrite.
+3. `python -m kgen add solution <file>`; fix what the sentences name; `python -m kgen add --replace solution <file>` to overwrite.
 4. `python -m kgen check <def> --static-only`.
 5. On aarch64 (Graviton; `bench-trace/` is gitignored, so rsync it over first):
    `python -m kgen check <def> --num-selected-workloads 5` (add `--isa sve2` where a dataset

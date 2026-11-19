@@ -1,15 +1,16 @@
-"""armbench CLI. Thin argparse layer over Benchmark / TraceSet.
+"""`python -m bench.cli`: thin argparse layer over Benchmark / TraceSet.
 
-Usage:
-    armbench bench    --root <path> --definition <name> --solution <name> (--dataset <name> | --baseline-author <author>)
+Usage (run from the repo root; `--root`, default bench-trace/, goes before the subcommand):
+    python -m bench.cli [--root <path>] bench --definition <name> --solution <name> (--dataset <name> | --baseline-author <author>)
                       [--workload-axes axis=value,...] [--isa <isa>]
-    armbench collect-baselines --root <path> (--dataset <name> | --baseline-author <author>)
+    python -m bench.cli [--root <path>] collect-baselines (--dataset <name> | --baseline-author <author>)
                       [--definition <name>] [--isa <isa>]
-    armbench bench-author --root <path> --dataset <name> [--author <name>] [--op-type/--definition/--isa ...]
-    armbench retime   --root <path> --dataset <name> --isa <isa> --index <extracted.json> --pass-id <id> --out <file>
-    armbench summary  --root <path>
-    armbench list-definitions --root <path>
-    armbench list-solutions   --root <path> [--definition <name>]
+    python -m bench.cli [--root <path>] bench-author --dataset <name> [--author <name>] [--op-type/--definition/--isa ...]
+    python -m bench.cli [--root <path>] retime --dataset <name> --isa <isa> (--index <extracted.json> | --author <name>...)
+                      --pass-id <id> --out <file>
+    python -m bench.cli [--root <path>] summary
+    python -m bench.cli [--root <path>] list-definitions
+    python -m bench.cli [--root <path>] list-solutions [--definition <name>]
 
 """
 

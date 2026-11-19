@@ -11,7 +11,7 @@ small file **you write at run time** and pass in. There are no generator scripts
 | Command | What it does |
 |---|---|
 | `kgen show <def>` | axes, tensors, tags, the workload points and solutions already there |
-| `kgen add workload FILE --definition D [--replace] [--max-count N --batch-key AXIS]` | lint FILE and write `bench-trace/workloads/<op>/<D>.jsonl` |
+| `kgen add [--replace] workload FILE --definition D [--max-count N --batch-key AXIS]` | lint FILE and write `bench-trace/workloads/<op>/<D>.jsonl` |
 | `kgen collect pytorch --loader load.py ... --out-dir DIR` | run a PyTorch model, write the shapes its layers saw as candidate pools `DIR/<def>.jsonl` |
 | `kgen capture pytorch --loader load.py --source TEXT ...` | replace an input of existing workloads with real activations from the same run |
 | `kgen calibrate --author A --baseline-author B ...` | (aarch64 only) record the baseline's SQNR per workload for `correctness:sqnr` definitions |

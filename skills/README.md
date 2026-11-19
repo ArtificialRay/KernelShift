@@ -1,7 +1,7 @@
 # Kernel auto-optimizing via agent harness
 
 CPU-Kernel-Baseline provides skills to run its kernel auto-optimizing bench
-pipeline (compile/evaluate/disassemble/submit against `mcp_app`'s MCP
+pipeline (check_progress/compile/evaluate/disassemble against `mcp_app`'s MCP
 server) through modern agent harnesses.
 
 This document covers what's common to every harness: which ones are
@@ -40,7 +40,7 @@ same shared `provisioning/eval_config.json` for "what's currently up" — so an
 instance `provisioning/provision.py` brought up is visible to `launch/`, and vice
 versa; there's exactly one record of what's running, not two.
 
-Note that **launch**, or **provision** + **prepare-session** used separately, brings up an instance with the target dataset (codebase) built. As long as you copy the spawn command for mcp server to your agent's config, or execute the spawn command, the server starts.
+Note that **launch**, or **provision** + **prepare-session** used separately, brings up an instance with the target dataset (codebase) built and starts the MCP server on it. The command prints only the endpoint (`tunnel up: http://127.0.0.1:<local-port>/mcp`) and keeps the SSH tunnel open until Ctrl-C; point your agent's MCP config at that endpoint.
 
 The one-shot path, run from `skills/launch/`:
 
@@ -118,13 +118,13 @@ genuinely required unless you pass `--no-sync`.
 | `--remote-port` | no | `8765` | port `mcp_app.server` binds to on the instance |
 | `--no-sync` | flag | off | skip the rsync step (repo already up to date on the instance) — makes `--local-repo-dir` optional |
 
-What you do with the printed spawn command/endpoint — where it goes in your
+What you do with the printed endpoint — where it goes in your
 harness's config, what `tool_timeout`/`enabledTools` settings it needs — is
 harness-specific; see that harness's own `README.md` (§1's table).
 
 ## 3. After the run: sync results back
 
-Once the agent has `submit`'d everything it was assigned (or you decide to
+Once the agent has worked through everything it was assigned (or you decide to
 stop it), pull results back — run this from the same host you ran
 `provision`/`prepare-session` from, **after** the run has finished:
 

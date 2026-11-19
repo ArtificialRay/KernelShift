@@ -16,7 +16,7 @@ copying the closest existing one and changing what the definition changes), then
 | Command | Purpose |
 |---|---|
 | `kgen show <def>` | const/var axes, input dtypes, workloads, and which solutions exist |
-| `kgen add solution FILE [--replace]` | lint FILE and write `bench-trace/solutions/<dataset>/<author>/<op_type>/<def>.json` |
+| `kgen add [--replace] solution FILE` | lint FILE and write `bench-trace/solutions/<dataset>/<author>/<op_type>/<def>.json` |
 | `kgen check <def>` | static lint always; on aarch64 also builds and runs reference-scalar against the reference |
 
 ---
@@ -114,7 +114,7 @@ scale and bias in `double`, cast to `float` at the very end, to match the refere
 1. `kgen show <def>`; check the dataset tag and which solutions exist.
 2. Write `<def>.json` in the scratchpad (a throwaway snippet that renders it from the definition is fine for a whole op type; render, then add each file).
 3. `python -m kgen add solution <file>` - problems come back as sentences naming the field;
-   fix and rerun. `--replace` to overwrite.
+   fix and rerun. `python -m kgen add --replace solution <file>` to overwrite.
 4. `python -m kgen check <def> --static-only` anywhere.
 5. On an aarch64 machine: `python -m kgen check <def> --num-selected-workloads 5`. The
    reference-scalar leg must pass; if the baseline leg also exists, the diagnosis line tells

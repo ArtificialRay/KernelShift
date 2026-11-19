@@ -20,8 +20,8 @@ it beats your previous best; see "Finish and report" below.
 
 ### ONE DEFINITION AT A TIME
 - Never target two definitions in the same turn. `evaluate`/`disassemble`
-  both require an explicit `definition` argument (`disassemble` also
-  requires `version`), checked against whoever you last `compile()`'d — if
+  both require explicit `definition` and `version` arguments (the ones
+  `compile()` returned), checked against whoever you last `compile()`'d — if
   it doesn't match, you get back `{"status": "DEF_CHECK_FAILED"}` instead
   of it silently acting on the wrong one.
 - If you are targeted to optimize a definition in one specific ISA, do NOT
@@ -70,7 +70,7 @@ those to check. Instead, for every definition, before your first
    reference-scalar). Instead, your first two calls must be, in order:
    a. `compile({"definition": "<that definition's name>", "code":
       <best_code>})`
-   b. `evaluate({})` on the result
+   b. `evaluate({"definition": ..., "version": N})` on the result, with the `version` compile() returned
    Do this even though you already know `best_metrics`, because you need to re-establish the "best-so-far" kernel version in your current session.
    Only after this pair of calls should you continue optimizing, treating
    `best_metrics` as the number you need to beat. You don't need to track
@@ -92,7 +92,7 @@ Before writing any optimized code for a given definition:
    Don't try `ReadMcpResourceTool`/`list_resources()` on it — it will 404.
 3. `compile({"definition": "<that definition's name>", "code": <that
    content>})` — this becomes version `v1` for that definition.
-4. `evaluate({})` — one call, always returns both correctness and
+4. `evaluate({"definition": ..., "version": N})` — one call, always returns both correctness and
    performance together; there's no separate "measure" flag or faster
    correctness-only mode — the underlying evaluator always runs the full
    timed pass once correctness passes, so there's nothing cheaper to opt
@@ -109,11 +109,11 @@ Standard loop for the definition you're currently working on:
 
 1. `compile({"definition": "<same definition>", "code": ...})` your
    optimized attempt.
-2. `evaluate({})` — correctness + timing + cycle speedup in one call. It
+2. `evaluate({"definition": ..., "version": N})` — correctness + timing + cycle speedup in one call. It
    also auto-persists the best-performing version the moment it beats your
    previous best this session — that result is already saved to
    `trajectory.jsonl` and `bench-trace`.
-3. `disassemble({})` when IPC is low or speedup is unexpectedly poor
+3. `disassemble({"definition": ..., "version": N})` when IPC is low or speedup is unexpectedly poor
    (defaults to your kernel's own symbol).
 4. Iterate: compile -> evaluate -> improve. Re-list/re-read your own
    earlier versions or the optimization trajectory instead of
@@ -130,7 +130,7 @@ Standard loop for the definition you're currently working on:
      updated live as you go). Read it to check a past attempt's recorded
      scores instead of re-evaluating it.
 
-### Metrics from evaluate({}) (on `"status": "PASSED"`)
+### Metrics from evaluate() (on `"status": "PASSED"`)
 - `max_absolute_error`/`max_relative_error` — correctness, always present.
 - `time_speedup_geomean` — wall-time speedup vs. the competitive baseline
   (geomean across workloads; >1.0 = faster).

@@ -64,7 +64,7 @@ those to check. Instead, for every definition, before your first
    reference-scalar). Instead, your first two calls must be, in order:
    a. `compile({"definition": "<that definition's name>", "code":
       <best_code>})`
-   b. `evaluate({})` on the result
+   b. `evaluate({"definition": ..., "version": N})` on the result, with the `version` compile() returned
    Do this even though you already know `best_metrics`, because you need to re-establish the "best-so-far" kernel version in your current session.
    Only after this pair of calls should you continue optimizing, treating
    `best_metrics` as the number you need to beat. You don't need to track
@@ -84,7 +84,7 @@ Before writing any optimized code for a given definition:
    `compile()`. Don't try `list_resources()`/`read_resource()` on it — it
    will 404.
 3. `compile({"definition": "<that definition's name>", "code": <that content>})`
-4. `evaluate({})` — one call, always returns both correctness and
+4. `evaluate({"definition": ..., "version": N})` — one call, always returns both correctness and
    performance together (see §2's Metrics list; there's no separate
    "measure" flag or faster correctness-only mode — the underlying evaluator
    always runs the full timed pass once correctness passes, so there's
@@ -99,16 +99,16 @@ starting point, not just over the competitive baseline; If you already gain the 
 Standard loop for the definition you're currently working on:
 
 1. `compile({"definition": "<same definition>", "code": ...})` your optimized attempt.
-2. `evaluate({})` — correctness + timing + cycle speedup in one call. It also auto-persists the best-performing version the moment it beats your previous best this session — that result is already saved to `trajectory.jsonl` and `bench-trace`.
-3. `disassemble({})` when IPC is low or speedup is unexpectedly poor
+2. `evaluate({"definition": ..., "version": N})` — correctness + timing + cycle speedup in one call. It also auto-persists the best-performing version the moment it beats your previous best this session — that result is already saved to `trajectory.jsonl` and `bench-trace`.
+3. `disassemble({"definition": ..., "version": N})` when IPC is low or speedup is unexpectedly poor
    (defaults to your kernel's own symbol).
 4. Iterate: compile → evaluate → improve. Use `list_resources()`/
    `read_resource()` to re-read any of your own earlier versions or optimization trajectory. The resources you can read are:
    - `<definition>/vN.cpp` — the kernel source for version N, written by `compile()`. Re-read an earlier version to compare against or revert to.
    - `<definition>/vN.s` — the disassembled AArch64 for version N, written by `disassemble()`. Only exists for versions you actually disassembled.
-   - `<definition>/trajectory.jsonl` — the full turn-by-turn history for this definition (every `compile`/`evaluate`/`disassemble`/`submit` call, updated live as you go). Read it to check a past attempt's recorded scores instead of re-evaluating it.
+   - `<definition>/trajectory.jsonl` — the full turn-by-turn history for this definition (every `compile`/`evaluate`/`disassemble` call, plus a `submit` turn each time `evaluate` saves a new best, updated live as you go). Read it to check a past attempt's recorded scores instead of re-evaluating it.
 
-### Metrics from evaluate({}) (on `"status": "PASSED"`)
+### Metrics from evaluate() (on `"status": "PASSED"`)
 - `max_absolute_error`/`max_relative_error` — correctness, always present.
 - `time_speedup_geomean` — wall-time speedup vs. the competitive baseline
   (geomean across workloads; >1.0 = faster).

@@ -103,22 +103,28 @@ caps the compile, evaluate and disassemble calls per kernel. `--help` lists the 
 
 1. An AWS account in `us-west-2` (the AMIs are pinned to that region), and an
    existing security group that allows SSH.
-2. `~/.ssh/id_rsa` and `~/.ssh/id_rsa.pub`; the public key is registered with EC2.
+2. `~/.ssh/id_rsa` and `~/.ssh/id_rsa.pub`; Terraform imports the public key into EC2
+   itself.
 3. `cp provisioning/workspaces.json.example provisioning/workspaces.json` and fill in
-   the one entry: `account_id`, `namespace`, `aws_profile`, `aws_region`,
-   `security_group_id`.
+   the one entry: `aws_region` and `security_group_id` are required; `account_id`
+   (Terraform then refuses credentials for any other account), `namespace` and
+   `aws_profile` are optional.
 4. `terraform -chdir=terraform init`
 
-Instances are spot by default (`--on-demand` to change). A Linux instance shuts
-itself down within about 2 hours of its driver stopping (`--watchdog-minutes`);
+Instances are spot by default (`--on-demand` to change). `bench_fleet.py` tears its
+instance down when the run completes, but not when the run fails or is interrupted.
+It also keeps a Linux instance's self-shutdown armed, so the instance shuts itself
+down within about 2 hours of the driver stopping (`--watchdog-minutes`); an instance
+started another way (`launch_session.py`, `provision.py`) has no such guard.
 `python3 provisioning/provision.py --teardown` removes instances right away.
 
 An M4 needs a Dedicated Host, which AWS bills for at least 24 hours. Provisioning
-never allocates one. Allocate it yourself, and release it when done:
+never allocates one. Allocate it yourself, in an availability zone that has a default
+subnet, and release it when done:
 
 ```bash
-aws ec2 allocate-hosts --instance-type mac-m4.metal --availability-zone <az> --quantity 1
-aws ec2 release-hosts --host-ids <host-id>
+aws ec2 allocate-hosts --region us-west-2 --instance-type mac-m4.metal --availability-zone <az> --quantity 1
+aws ec2 release-hosts --region us-west-2 --host-ids <host-id>
 ```
 
 ### Results
@@ -131,9 +137,11 @@ Each kernel gets a directory `agent-runs-<author>/<definition>/`, where `<author
   carries `time_speedup_geomean`, the geometric mean over workloads of
   baseline time / kernel time.
 
-A kernel's result is the highest `time_speedup_geomean` among its passing evaluates. `--wandb`
-also logs each run to Weights & Biases (fields described in
-[`analysis/README.md`](analysis/README.md)).
+A kernel's result is the highest `time_speedup_geomean` among its passing evaluates. The
+version saved as its solution (the trajectory's last `submit` turn) is the one with the
+highest `cycle_speedup_geomean` instead (time where there are no cycle counters, as on the
+M4), so it can be a different version. `--wandb` also logs each run to Weights & Biases
+(fields described in [`analysis/README.md`](analysis/README.md)).
 
 On Linux, external CLI harnesses (`claude-code`, `codex`, `cline`, `nanobot`)
 run in a per-job **Bubblewrap filesystem sandbox** by default. Install `bwrap`
@@ -145,7 +153,8 @@ explicit `--file-sandbox bwrap` is rejected for them.
 ## Other ways to use it
 
 - **Your own agent harness:** `python3 skills/launch/launch_session.py launch --isa <isa> --dataset <dataset> --author <name>`
-  starts the MCP server on an instance and prints its endpoint. Tools:
+  starts the MCP server on an instance and prints its endpoint. It passes no
+  `--max-iterations`, so the session has no tool-call cap. Tools:
   [`mcp_app/README.md`](mcp_app/README.md); commands: [`skills/README.md`](skills/README.md).
 - **Inside llama.cpp:** splice agent GEMM kernels into llama.cpp and measure tokens/s and
   perplexity: [`e2e/README.md`](e2e/README.md).

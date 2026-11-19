@@ -17,7 +17,7 @@ kgen commands used here:
 | Command | Purpose |
 |---|---|
 | `kgen show <def> [--full]` | read a similar existing definition (axes, tensors, tags, constraints, reference with `--full`) before writing |
-| `kgen add definition FILE [--replace]` | lint FILE and write `bench-trace/definitions/<op_type>/<name>.json` |
+| `kgen add [--replace] definition FILE` | lint FILE and write `bench-trace/definitions/<op_type>/<name>.json` |
 | `kgen discover plugin.py [--out F] [-- args]` | frameworks only: list the operators a model uses (see Step 0) |
 | `kgen check <name> --static-only` | re-lint what is in the warehouse |
 

@@ -18,8 +18,8 @@ and — as of the eval/mcp_client.py migration — the same `mcp_app/server.py` 
 execution surface for every agent-driven path:
 
 - **Path 1 — In-repo litellm agent loop** (`eval/`): a self-contained litellm
-  agent loop (`eval/evaluator.py::run_agentic_eval`) drives compile/evaluate/
-  disassemble/submit as an MCP client of `mcp_app/server.py` (`eval/mcp_client.py`),
+  agent loop (`eval/evaluator.py::run_agentic_eval`) drives check_progress/compile/
+  evaluate/disassemble as an MCP client of `mcp_app/server.py` (`eval/mcp_client.py`),
   started on a provisioned Graviton instance over an SSH-tunneled MCP session —
   the same server nanobot/Claude Code drive in Path 3, just with this repo's
   own litellm loop as the client instead of an external harness. Driven via
@@ -35,15 +35,14 @@ execution surface for every agent-driven path:
   agent loop. Works on any machine; produces real SVE2 numbers on Graviton.
   Also the library every other path calls into.
 - **Path 3 — MCP-server-driven eval** (`mcp_app/` + `skills/`): the same
-  compile/evaluate/disassemble/submit surface exposed as an MCP server
+  check_progress/compile/evaluate/disassemble surface exposed as an MCP server
   (`mcp_app/server.py`) so an external agent harness (nanobot, Claude Code)
   drives the session instead of an in-repo agent loop. `skills/launch/`
   provisions an instance and starts the server; `skills/<harness>/` holds
   that harness's own `SKILL.md`.
 
-Top-level framework directories (`ncnn/`, `ggml/`, `vllm/`, `paddleLite/`, `tnn/`)
-are read-only reference baselines. `ncnn/` is NOT in this repo — clone separately
-for ncnn baseline builds (see below).
+No framework sources are checked in. `ncnn/` is NOT in this repo — clone it next to
+the repo (or set `NCNN_ROOT`) for ncnn baseline builds (see below).
 
 ---
 
@@ -113,7 +112,9 @@ runner/server down. The subprocess:
 4. Reports speedup factors vs the competitive baseline
 
 Timing (`bench/runtime/timing.py`):
-- Default: warmup=5, repeat=50, inner_iters=1, watchdog=30s
+- Default (`eval_defaults` in `config/kernel_contracts.yaml`): warmup=10, repeat=50,
+  inner_iters=auto (probed per workload so one sample lasts `target_sample_ns`, 10 ms;
+  a candidate uses its baseline's count), watchdog=30s
 - `min_ns` is the canonical metric (one per workload), `p5_ns` as jitter proxy
 - Hardware perf counters: CYCLES, INSTRUCTIONS, CACHE_MISSES via Linux
   `perf_event_open(2)` — best-effort (silently skips where unavailable)
@@ -128,8 +129,9 @@ Correctness (`bench/runtime/correctness.py`):
 
 ### MCP server internals (`mcp_app/`)
 
-`mcp_app/server.py` starts an MCP server that exposes `compile`/`evaluate`/
-`disassemble`/`submit` as MCP tools. Key design:
+`mcp_app/server.py` starts an MCP server that exposes `check_progress`/`compile`/
+`evaluate`/`disassemble` as MCP tools (`evaluate` saves each new best itself;
+`submit` is internal, not a tool). Key design:
 
 - **Zero coupling to `eval/` or `skills/`**: never provisions instances, never
   imports from either. Uses `contracts.py` from repo root for shared naming.
@@ -179,9 +181,6 @@ bench/                          # Local harness Python package
       ncnn.py                   # NcnnBuilder: ncnn::Mat for ncnn baselines (links libncnn.a)
       simd_loop.py              # SimdLoopBuilder: from solution sources
       llama_cpp.py              # LlamaCppBuilder: ggml static libs
-      candidate_harness/        # C shims for candidate kernels
-      ncnn_harness/             # C shims for ncnn baseline kernels
-      simd_loop_harness/        # Legacy on-disk copies (fallback only)
   datasets/
     ncnn.py                     # NcnnDataset adapter
     raw.py                      # RawDataset for candidates
@@ -222,7 +221,7 @@ bench-trace/                    # On-disk warehouse (TraceSet root) — .gitigno
 eval/                           # In-repo litellm agent loop (Path 1)
   evaluator.py                  # run_agentic_eval turn loop (prompts, retries, history compression)
   mcp_client.py                 # MCP client bridge — attach()es to an already-running
-                                 #   mcp_app/server.py session (compile/evaluate/disassemble/submit),
+                                 #   mcp_app/server.py session (check_progress/compile/evaluate/disassemble),
                                  #   same server Path 3 drives; provisioning/tunnel lifecycle is the
                                  #   caller's (test_scripts/bench_fleet.py's) job, not this module's
   llm_providers.py              # resolve_completion_kwargs() — optional per-provider
@@ -237,10 +236,11 @@ provisioning/                   # Terraform/EC2 lifecycle shared by all three pa
                                  #   eval/ or provisioning/), imported directly elsewhere
   provision.py                  # Terraform lifecycle for Graviton EC2 instances
   remote.py                     # InstanceHandle — SSH/rsync to a provisioned instance
-  eval_config.json              # SSH connection info — copy from .example
+  eval_config.json              # SSH connection info per label — written by provision.py; don't copy
+                                 #   the .example (its labels would count as live instances, e.g. for --teardown)
   workspaces.py                 # current_workspace_config() — per-Terraform-workspace AWS
                                  #   account/namespace/profile, keyed by `terraform workspace show`
-  workspaces.json                # workspace -> {account_id, namespace, aws_profile} — copy from
+  workspaces.json                # workspace -> {account_id, namespace, aws_profile, aws_region, security_group_id} — copy from
                                  #   .example; provision.py always injects these per terraform call
                                  #   instead of relying on a single global .env value (see
                                  #   workspaces.py's module docstring for the incident that motivated it)
