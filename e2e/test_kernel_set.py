@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Tests for the rows-ABI rewrite in kernel_set.py (static_assert(N % d == 0) handling).
 
-Run:  python3 e2e/adapters/llamacpp/test_kernel_set.py      (or pytest; the build test needs a C++ compiler,
+Run:  python3 e2e/test_kernel_set.py      (or pytest; the build test needs a C++ compiler,
       $CXX or clang++-18 / clang++ / c++, and is skipped without one)
 
 Checks:
@@ -23,9 +23,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-from e2e.adapters.llamacpp import kernel_set as ks  # noqa: E402
+from e2e import kernel_set as ks  # noqa: E402
 
 
 def kernel(prelude: str) -> str:
@@ -121,7 +121,9 @@ def test_build_kernels():
                                   {"path": "kernel.cpp", "content": KERNEL_CPP % prelude}]}
     with tempfile.TemporaryDirectory() as d:
         # "-w" stands in for the ISA's -march: the test kernel is plain C++
-        kernels, skipped = ks.build_kernels(sols, "test", Path(d), "-w", rows_abi=True, cxx=cxx)
+        selected = {"gemm_ggml_q4_K_n256_k256": {"type": "q4_K", "N": 256, "K": 256},
+                    "gemm_ggml_q6_K_n256_k256": {"type": "q6_K", "N": 256, "K": 256}}
+        kernels, skipped = ks.build_kernels(sols, "test", Path(d), "-w", selected=selected, rows_abi=True, cxx=cxx)
         assert not skipped, skipped
         by = {k["definition"]: k for k in kernels}
         q4, q6 = by["gemm_ggml_q4_K_n256_k256"], by["gemm_ggml_q6_K_n256_k256"]
