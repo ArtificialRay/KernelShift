@@ -5,14 +5,12 @@ its own retry quirks. The driver owns provisioning and the retry/log/sync loop.
 
 from .base import HarnessAdapter, HarnessLaunchError, Job, QUOTA_EXIT_CODE, run_and_tee
 from .claude_code import ClaudeCodeAdapter
-from .cline import ClineAdapter
 from .codex import CodexAdapter
 from .nanobot import NanobotAdapter
 from .own import OwnHarnessAdapter
-from .single_shot import SingleShotAdapter
 
 __all__ = [
     "HarnessAdapter", "HarnessLaunchError", "Job", "QUOTA_EXIT_CODE", "run_and_tee",
-    "ClaudeCodeAdapter", "ClineAdapter", "CodexAdapter", "NanobotAdapter",
-    "OwnHarnessAdapter", "SingleShotAdapter",
+    "ClaudeCodeAdapter", "CodexAdapter", "NanobotAdapter",
+    "OwnHarnessAdapter",
 ]

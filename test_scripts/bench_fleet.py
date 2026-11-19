@@ -12,9 +12,6 @@ Usage:
     python3 test_scripts/bench_fleet.py --harness codex \\
         --dataset ncnn --isa sve2 --model gpt-5.6-luna
 
-    python3 test_scripts/bench_fleet.py --harness cline \\
-        --dataset ncnn --isa sve2 --model gpt-5.6-luna
-
     # Resume across multiple datasets, processing them in order and running
     # chunks for each dataset on up to two instances:
     python3 test_scripts/bench_fleet.py --harness claude-code \\
@@ -58,8 +55,8 @@ from mcp_app.agent_tools.isa import isa_satisfies
 # run script's own directory on sys.path[0] automatically (same idiom
 # skills/launch/launch_session.py uses for its sibling remote.py).
 from harness_adapters import (
-    HarnessAdapter, HarnessLaunchError, ClaudeCodeAdapter, ClineAdapter, CodexAdapter, NanobotAdapter,
-    OwnHarnessAdapter, SingleShotAdapter, Job, QUOTA_EXIT_CODE,
+    HarnessAdapter, HarnessLaunchError, ClaudeCodeAdapter, CodexAdapter, NanobotAdapter,
+    OwnHarnessAdapter, Job, QUOTA_EXIT_CODE,
 )
 from harness_adapters.sandbox import check_file_sandbox
 
@@ -68,9 +65,8 @@ DEFINITIONS_DIR = REPO_ROOT / "bench-trace" / "definitions"
 # For run_until_complete()'s round planner only — it needs each harness's
 # prompt_template/template_args.
 ADAPTER_CLASSES = {
-    "claude-code": ClaudeCodeAdapter, "cline": ClineAdapter, "codex": CodexAdapter,
+    "claude-code": ClaudeCodeAdapter, "codex": CodexAdapter,
     "nanobot": NanobotAdapter, "own": OwnHarnessAdapter,
-    "single-shot": SingleShotAdapter,
 }
 
 
@@ -328,7 +324,7 @@ def run_fleet(args: argparse.Namespace, dataset: str) -> str:
     adapter: HarnessAdapter
     model = args.model
     local_port = _free_local_port()
-    if args.file_sandbox == "bwrap" and args.harness in ("own", "single-shot"):
+    if args.file_sandbox == "bwrap" and args.harness == "own":
         raise FleetRunError(
             f"--file-sandbox bwrap cannot contain the in-process {args.harness} harness; "
             "use an external CLI harness or --file-sandbox off"
@@ -337,13 +333,11 @@ def run_fleet(args: argparse.Namespace, dataset: str) -> str:
         adapter = ClaudeCodeAdapter(model=args.model)
     elif args.harness == "codex":
         adapter = CodexAdapter(model=args.model)
-    elif args.harness == "cline":
-        adapter = ClineAdapter(model=args.model)
     elif args.harness == "nanobot":
         adapter = NanobotAdapter(dataset=dataset, model=args.model, local_port=local_port)
         if model is None:
             model = adapter.model
-    elif args.harness not in ("own", "single-shot"):
+    elif args.harness != "own":
         raise ValueError(f"Unknown --harness {args.harness!r}")
     if args.file_sandbox == "bwrap":
         try:
@@ -397,12 +391,6 @@ def run_fleet(args: argparse.Namespace, dataset: str) -> str:
             # cap (line above, `max_iterations`): since some model won't provide a tool call for each turn,
             # set a tool call budget that is much higher than max-iterations to avoid unnecessary re-running
             max_turns=max_iterations * 3,
-        )
-    elif args.harness == "single-shot":
-        adapter = SingleShotAdapter(
-            endpoint=prepared["endpoint"], author=author, remote_root=args.remote_root,
-            target=instance.target, dataset=dataset, isa=isa, model=args.model,
-            samples=args.samples, temperature=args.temperature,
         )
     ran_jobs: list[Job] = []
     failed_jobs: list[str] = []
@@ -753,7 +741,7 @@ def sync_job_artifacts(
 def main(argv: Optional[list[str]] = None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--harness", required=True,
-                   choices=["claude-code", "cline", "codex", "nanobot", "own", "single-shot"])
+                   choices=["claude-code", "codex", "nanobot", "own"])
     p.add_argument("--dataset", required=True, nargs="+", choices=["ncnn", "simd-loop", "llama.cpp", "kleidiai"],
                    help="One or more datasets (space-separated). More than one requires "
                         "--until-complete, which processes them in order.")
@@ -763,14 +751,6 @@ def main(argv: Optional[list[str]] = None) -> None:
                         "(empty = CLI default). nanobot: patched into a temp copy of "
                         "agents.defaults.model (nanobot's CLI has no --model flag). own: "
                         "litellm model string, required (e.g. anthropic/claude-opus-4-8).")
-    p.add_argument("--samples", type=int, default=3,
-                   help="--harness single-shot only: independent one-shot generations per "
-                        "definition. Failed samples are kept, not redrawn — the pass rate is "
-                        "part of the result. Default: 3")
-    p.add_argument("--temperature", type=float, default=1.0,
-                   help="--harness single-shot only: sampling temperature. The default of 1.0 "
-                        "is what makes repeated samples differ; 0 would draw the same kernel "
-                        "every time and waste --samples. Default: 1.0")
     p.add_argument("--min-iterations", type=int, default=15,
                    help="Floor, not a cap — the model is told not to submit early. Default: 15")
     p.add_argument("--max-iterations", type=int, default=40,
@@ -831,7 +811,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     args = p.parse_args(argv)
     if args.file_sandbox is None:
         args.file_sandbox = (
-            "bwrap" if sys.platform == "linux" and args.harness not in ("own", "single-shot")
+            "bwrap" if sys.platform == "linux" and args.harness != "own"
             else "off"
         )
 
