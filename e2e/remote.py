@@ -53,9 +53,10 @@ def run_on_box(box, ctx: E2EContext, opts: Options, steps: list[str]) -> int:
         raise StepFailed(f"rsync to the box failed: {(e.stderr or b'').decode()[-300:]}")
 
     command = f"cd {BOX_REPO} && {box.python} -m e2e evaluate " + " ".join(map(shlex.quote, box_args(ctx, opts, steps)))
+    # setsid + every stream redirected: otherwise ssh waits for the detached run to close its stdin/stdout
     box.run(f"mkdir -p {run} && rm -f {run}/evaluate.done && "
-            f"nohup bash -c {shlex.quote(f'{command} > {run}/evaluate.log 2>&1; echo $? > {run}/evaluate.done')} "
-            f">/dev/null 2>&1 &")
+            f"setsid nohup bash -c {shlex.quote(f'{command} > {run}/evaluate.log 2>&1; echo $? > {run}/evaluate.done')} "
+            f"</dev/null >/dev/null 2>&1 &", timeout=60)
     print(f"[e2e] running on {box.host}: {' '.join(steps)}   (log: {run}/evaluate.log)")
     try:
         code = follow(box, run)
