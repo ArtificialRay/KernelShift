@@ -101,7 +101,9 @@ class Options:
     reps: int = 5
     fa: str = "off"
     ub: list[int] = field(default_factory=list)            # micro-batch sizes; several: a sweep; empty: llama.cpp's default
-    perplexity: str | None = None         # text file for llama-perplexity; omitted: no quality check
+    text: str | None = None               # text file for the quality checks (perplexity, kld); omitted: none
     ppl_chunks: int = 64
+    kld: bool = False                     # also the KL divergence of each build against stock (needs text)
+    kld_chunks: int = 32
     baseline: str = "stock"
     log: str | None = None                # report: measure's printed output, to rebuild a missing results file

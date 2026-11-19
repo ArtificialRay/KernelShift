@@ -80,11 +80,55 @@ def verify_hook(name: str, b: dict, model: Path, threads: int, fa: str, ub: int 
     return {"expected": len(want), "hit": len(hit & want)}
 
 
+KLD_FIELDS = {   # llama-perplexity --kl-divergence summary line -> key in the results
+    "mean_kld": r"Mean\s+KLD:\s*(-?[\d.]+)",
+    "median_kld": r"Median\s+KLD:\s*(-?[\d.]+)",
+    "p99_kld": r"99\.0%\s+KLD:\s*(-?[\d.]+)",
+    "max_kld": r"Maximum KLD:\s*(-?[\d.]+)",
+    "rms_dp_pct": r"RMS Δp\s*:\s*(-?[\d.]+)",
+    "same_top_p_pct": r"Same top p:\s*(-?[\d.]+)",
+    "ppl_ratio": r"Mean PPL\(Q\)/PPL\(base\)\s*:\s*(-?[\d.]+)",
+}
+
+
+def parse_kld(text: str) -> dict:
+    """The numbers of llama-perplexity's KL-divergence summary; raises if one is missing."""
+    out = {}
+    for key, rx in KLD_FIELDS.items():
+        m = re.search(rx, text)
+        if not m:
+            raise StepFailed(f"no {key!r} in the KL-divergence output")
+        out[key] = float(m.group(1))
+    return out
+
+
+def run_kld(b: dict, model: Path, text: Path, chunks: int, threads: int, fa: str, ub: int | None,
+            base: Path, log: Path, reference: bool) -> dict:
+    """llama-perplexity on `text` with one build. The reference build saves its logits to `base`
+    ({}); every other build is compared with them (KL divergence, top-token agreement)."""
+    env = dict(os.environ)
+    if b["manifest"]:
+        env["ARMBENCH_OVERRIDES"] = b["manifest"]
+    env.update(b["env"])
+    cmd = [str(b["dir"] / "bin" / "llama-perplexity"), "-m", str(model), "-f", str(text), "--chunks", str(chunks),
+           "-t", str(threads), "-fa", fa, "--kl-divergence-base", str(base)]
+    if not reference:
+        cmd.append("--kl-divergence")
+    if ub:
+        cmd += ["-ub", str(ub)]
+    p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=7200)
+    log.write_text(p.stdout + p.stderr)
+    if p.returncode != 0:
+        raise StepFailed(f"rc={p.returncode}: {(p.stdout + p.stderr)[-300:].strip()}")
+    return {} if reference else parse_kld(p.stdout + p.stderr)
+
+
 def measure(
     model: Path, builds: dict, *, overrides: dict | None = None, env: dict | None = None,
     threads=(4,), pp: int | Sequence[int] = 512, tg: int = 128, reps: int = 5, fa: str,
     ub: int | None | Sequence[int] = None,
-    perplexity: Path | None = None, ppl_chunks: int = 64, out: Path = Path("e2e_results.json"),
+    text: Path | None = None, ppl_chunks: int = 64, kld_chunks: int | None = None,
+    out: Path = Path("e2e_results.json"),
 ) -> dict:
     """llama-bench (pp / tg) and optionally llama-perplexity for every build, interleaved, on this
     machine; writes the raw samples and summary to `out` and returns them.
@@ -97,7 +141,9 @@ def measure(
     pp          prompt length, or several: prompt processing is timed for every pp x ub pair
     ub          micro-batch size (-ub), or several; llama.cpp's default (512) if None.
                 Generation (tg) does not depend on either, so it is timed once, with the first pair.
-    perplexity  text file for llama-perplexity (run with the first ub); ppl_chunks is how many chunks of it to score
+    text        text file for the quality checks: llama-perplexity on ppl_chunks chunks of it (run with the first ub)
+    kld_chunks  if set, also compare every build's output distribution with stock's on the first kld_chunks chunks
+                of `text` (KL divergence; stock's saved logits are deleted afterwards)
     """
     model, out, threads = Path(model), Path(out), list(threads)
     pps = [pp] if isinstance(pp, int) else list(pp)
@@ -117,6 +163,10 @@ def measure(
     for name, b in builds.items():
         if not (b["dir"] / "bin" / "llama-bench").exists():
             raise StepFailed(f"{name}: {b['dir']}/bin/llama-bench not found")
+    if kld_chunks and not text:
+        raise StepFailed("the KL divergence needs a text file: pass --text")
+    if kld_chunks and "stock" not in builds:
+        raise StepFailed("the KL divergence is measured against the stock build, which is missing")
 
     for b in builds.values():
         if b["manifest"]:
@@ -165,10 +215,12 @@ def measure(
             if base and not k.startswith("stock/"):
                 v["speedup_vs_stock_median"] = v["median"] / base["median"]
 
+    kld = {}
+
     def dump(ppl):
         result = {"model": str(model), "pp": pps[0] if len(pps) == 1 else pps, "tg": tg, "reps": reps,
-                  "fa": fa, "ub": ubs[0] if len(ubs) == 1 else ubs, "ppl_chunks": ppl_chunks if perplexity else None,
-                  "hook": hook,
+                  "fa": fa, "ub": ubs[0] if len(ubs) == 1 else ubs, "ppl_chunks": ppl_chunks if text else None,
+                  "kld_chunks": kld_chunks, "kld": kld, "hook": hook,
                   "builds": {n: {"dir": str(b["dir"]), "manifest": b["manifest"], "env": b["env"]} for n, b in builds.items()},
                   "host": os.uname().nodename, "date": time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()),
                   "llama_cpp_commit": llama_commit(next(iter(builds.values()))["dir"]), "summary": summary, "perplexity": ppl, "samples": samples}
@@ -179,14 +231,14 @@ def measure(
     print(f"wrote {out} (bench only)", flush=True)
 
     ppl = {}
-    if perplexity:
+    if text:
         for name, b in builds.items():
             env = dict(os.environ)
             if b["manifest"]:
                 env["ARMBENCH_OVERRIDES"] = b["manifest"]
             env.update(b["env"])
             try:
-                cmd = [str(b["dir"] / "bin" / "llama-perplexity"), "-m", str(model), "-f", str(perplexity),
+                cmd = [str(b["dir"] / "bin" / "llama-perplexity"), "-m", str(model), "-f", str(text),
                        "--chunks", str(ppl_chunks), "-t", str(max(threads)), "-fa", fa]
                 if ub:
                     cmd += ["-ub", str(ub)]
@@ -198,6 +250,22 @@ def measure(
             except Exception as e:
                 ppl[name] = f"FAILED: {e}"
             print(f"perplexity {name}: {ppl[name]}", flush=True)
+        result = dump(ppl)
+
+    if kld_chunks:
+        base = out.with_name("kld.base")   # stock's logits: gigabytes, so deleted below and never fetched
+        try:
+            for name in ["stock"] + [n for n in builds if n != "stock"]:
+                try:
+                    kld[name] = run_kld(builds[name], model, text, kld_chunks, max(threads), fa, ub, base,
+                                        out.with_name(f"kld_{name}.log"), reference=name == "stock")
+                except Exception as e:
+                    kld[name] = {"error": str(e)}
+                    if name == "stock":   # nothing to compare the others with
+                        break
+                print(f"kld {name}: {json.dumps(kld[name])}", flush=True)
+        finally:
+            base.unlink(missing_ok=True)
         result = dump(ppl)
 
     print(f"\n{'config':28} {'median tok/s':>13} {'vs stock':>9}")

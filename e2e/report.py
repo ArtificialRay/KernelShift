@@ -102,6 +102,18 @@ def render_report(results, baseline: str = "stock") -> str:
             delta = f"  ({(v / base_v - 1) * 100:+.1f}% vs {baseline})" if base_v else ""
             say(f"  {b.ljust(18)} {v:8.3f}{delta}")
 
+    kld = d.get("kld") or {}
+    if kld:
+        say(f"\nagreement with {baseline} on {d.get('kld_chunks')} chunks (KL divergence: 0 = identical output)")
+        cols = f"{'build':18} {'mean KLD':>10} {'99% KLD':>10} {'RMS dp %':>9} {'same top-1 %':>13} {'PPL ratio':>10}"
+        say(cols); say("-" * len(cols))
+        for b in builds:
+            v = kld.get(b)
+            if v is None or b == baseline:
+                continue
+            say(f"{b:18} {v['mean_kld']:10.6f} {v['p99_kld']:10.6f} {v['rms_dp_pct']:9.3f} {v['same_top_p_pct']:13.3f} {v['ppl_ratio']:10.4f}"
+                if "error" not in v else f"{b:18} failed: {v['error'][:80]}")
+
     short = [k for k, c in n.items() if c < (d.get("reps") or 0)]
     if short:
         say(f"\nwarning: {len(short)} (build, threads, kind) cells have fewer than {d.get('reps')} samples")

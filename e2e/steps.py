@@ -65,8 +65,8 @@ def run_measure(ctx: E2EContext, opts: Options) -> dict:
     model = Path("~/models").expanduser() / ctx.model_config["file"]
     return measure(model, builds, overrides=overrides, threads=opts.threads, pp=opts.pp, tg=opts.tg,
                    reps=opts.reps, fa=opts.fa, ub=opts.ub,
-                   perplexity=Path(opts.perplexity) if opts.perplexity else None,
-                   ppl_chunks=opts.ppl_chunks, out=ctx.run.results)
+                   text=Path(opts.text) if opts.text else None,
+                   ppl_chunks=opts.ppl_chunks, kld_chunks=opts.kld_chunks if opts.kld else None, out=ctx.run.results)
 
 
 def run_report(ctx: E2EContext, opts: Options) -> str:

@@ -15,19 +15,19 @@ perplexity.
 ## Usage
 
 ```
-python -m e2e evaluate --model qwen3.5-4b --author AUTHOR --rows-abi --agent-build [--provision] [--perplexity FILE]
+python -m e2e evaluate --model qwen3.5-4b --author AUTHOR --rows-abi --agent-build [--provision] [--text FILE]
 ```
 
 One command runs everything. The work happens on the box: `evaluate` syncs the repo there, starts the
 steps detached (a dropped SSH session does not stop them), follows their log, and copies
 `e2e-runs/llamacpp-<model>-<isa>/` back when they finish. Ctrl-C only stops the following; pull the
-results later with the same command plus `--fetch`. `--perplexity FILE` is a path on the box.
+results later with the same command plus `--fetch`. `--text FILE` is a path on the box.
 
 | Step | Runs | What it does | Main options |
 |---|---|---|---|
 | `kernel_set` | box | Compiles the author's submitted kernels into shared objects (clang++-18, aarch64) and writes the manifest that tells llama.cpp which matmuls to replace. | `--author` (required), `--kernel all\|NAME`, `--rows-abi`, `--reference-author` with `--expect-changed`, `--expect-same`, `--expect-count`, `--forbid` |
 | `deploy` | launcher, over SSH | Builds the pinned llama.cpp tools tree on the box, downloads the model, and with `--agent-build` builds the variant with the replacement hook. | `--label`, `--provision`, `--instance-type`, `--agent-build` |
-| `measure` | box | llama-bench for each build, interleaved and repeated, and llama-perplexity. Fails if `build-agent` exists but the manifest is missing or empty. | `--perplexity FILE`, `--threads`, `--pp`, `--ub`, `--tg`, `--reps`, `--fa` |
+| `measure` | box | llama-bench for each build, interleaved and repeated, and llama-perplexity. Fails if `build-agent` exists but the manifest is missing or empty. | `--text FILE`, `--kld`, `--threads`, `--pp`, `--ub`, `--tg`, `--reps`, `--fa` |
 | `report` | box | Prints throughput, speedup and perplexity of the builds as one table, saved as `report.txt`. If the results file is missing it is rebuilt from `--log`, the output `measure` printed. | `--baseline`, `--log` |
 
 `--steps a,b` runs only some of them; a step whose result is already in the run directory is skipped, you can use `--force` to redo the whole process.
@@ -43,7 +43,7 @@ results later with the same command plus `--fetch`. `--perplexity FILE` is a pat
 
 The run directory holds `manifest.json` and the `.so` files, `e2e_results.json` (every sample, the
 summary, perplexity, host, date and llama.cpp commit), `hook_agent.log` (which kernels the hook replaced,
-with which ABI and how each call was split), `report.txt` and `evaluate.log` (what the box printed).
+with which ABI and how each call was split), `kld_<build>.log` (with `--kld`), `report.txt` and `evaluate.log` (what the box printed).
 
 Tearing the box down stays with `provisioning/provision.py --teardown --label ...`.
 
@@ -68,6 +68,12 @@ Options that change how they run:
 - `--ub N` (micro-batch, llama.cpp's `-ub`): while processing the prompt, llama.cpp feeds it to the model in chunks of at most N tokens (default 512). So `--ub` sets the biggest M the kernels see in pp: with a prompt of 2048 tokens and `--ub 512` it runs 4 chunks of 512, with `--ub 1` it runs 2048 chunks of one token each (like decode). It does not affect tg.
 - `--fa on|off` (flash attention): a different way to compute attention, which is not what the agent replaced. Default `off`: on the Graviton box llama.cpp's own `auto` choice picked the slower path, which
   made the long-prompt numbers misleading.
+- `--text FILE` (a text file on the box) is the text the quality checks run on; without it none runs.
+  - **Perplexity**: how well each build predicts the text, lower is better; the agent's build should be close to stock's. `--ppl-chunks N` sets how much of the text is used: the first N chunks, a chunk being a window of 512 tokens (default 64, about 32K tokens).
+- `--kld` (needs `--text`) compares every build with stock at each position of the first `--kld-chunks` chunks of the text (default 32, about 16K tokens):
+  - **Mean KLD**: how far the build's next-token probabilities are from stock's; 0 means identical, smaller is better.
+  - **RMS Δp**: how much the probability of the token that actually comes next in the text differs from stock's.
+  - **same top-1**: the share of positions where the most likely next token is the same as stock's; higher is better.
 - `--threads` (CPU threads, one result per value) and `--reps` (how many times each measurement is repeated, interleaved across builds; the table shows the median).
 
 A **sweep** is the same measurement repeated over several values of one setting, to see how the result changes. Pass several values to `--pp` and/or `--ub`:

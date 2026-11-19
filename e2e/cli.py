@@ -58,8 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--reps", type=int, default=5)
     m.add_argument("--fa", choices=["on", "off"], default="off", help="flash attention")
     m.add_argument("--ub", nargs="+", type=int, default=[], help="micro-batch size(s); several make a sweep (default: llama.cpp's)")
-    m.add_argument("--perplexity", default=None, help="text file for llama-perplexity (the quality check)")
+    m.add_argument("--text", default=None, help="text file for the quality checks (perplexity, and --kld); omitted: no quality check")
     m.add_argument("--ppl-chunks", type=int, default=64)
+    m.add_argument("--kld", action="store_true", help="also compare every build's output with stock's (KL divergence); needs --text")
+    m.add_argument("--kld-chunks", type=int, default=32, help="chunks of the text the KL divergence is computed on")
     m.add_argument("--baseline", default="stock", help="report: the build speedups are relative to")
     m.add_argument("--log", default=None, help="report: measure's printed output, to rebuild a missing results file")
     return p

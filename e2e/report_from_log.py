@@ -14,6 +14,7 @@ from pathlib import Path
 
 SAMPLE = re.compile(r"\[\s*(\d+)s\] rep (\d+) (\S+)\s+t=\s*(\d+) (pp|tg)\s+([\d.]+) tok/s(?:\s+\(n=(\d+) ub=(\w+)\))?")
 PERPLEXITY = re.compile(r"perplexity (\S+): (.*)")
+KLD = re.compile(r"kld (\S+): (\{.*\})")
 
 
 def results_from_log(stdout_log: Path, out: Path, *, model: str = "", pp: int | list[int] = 512, tg: int = 128) -> dict:
@@ -53,9 +54,11 @@ def results_from_log(stdout_log: Path, out: Path, *, model: str = "", pp: int | 
 
     ppl = {m.group(1): m.group(2).strip() for m in map(PERPLEXITY.match, stdout_log.read_text().splitlines()) if m}
 
+    kld = {m.group(1): json.loads(m.group(2)) for m in map(KLD.match, stdout_log.read_text().splitlines()) if m}
+
     reps = max((s["rep"] for s in samples), default=-1) + 1
     res = {"model": model, "pp": pps[0] if len(pps) == 1 else pps, "tg": tg, "reps": reps, "builds": {b: {} for b in builds}, "host": "",
-           "summary": summary, "perplexity": ppl, "samples": samples,
+           "summary": summary, "perplexity": ppl, "kld": kld, "samples": samples,
            "note": "rebuilt from the printed measure output"}
     out.write_text(json.dumps(res, indent=1))
     print(f"{len(samples)} samples, {len(summary)} configs, reps={reps}, perplexity for {list(ppl)} -> {out}")
