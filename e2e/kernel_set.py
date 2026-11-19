@@ -16,7 +16,7 @@ submitted, or a hand-written / reference-scalar set. Each solution carries its o
    "skipped":[{"definition":..., "embeddable":false, "reason":...}, ...]}
 
 Which definitions are built: those tagged `e2e:<model>` in bench-trace/definitions/. `kernel="all"`
-builds every one the author submitted, `kernel=NAME` just that one. N and K are the definition's const
+builds every one the author submitted, `kernel=[NAME, ...]` just those. N and K are the definition's const
 axes and the ggml type is the `layout` of its B input in the workloads; only q4_K / q5_K / q6_K gemms
 are spliceable (packed ABI). The rest, and any kernel that calls ggml's own routines, are listed under
 "skipped" with a reason.
@@ -207,7 +207,7 @@ class KernelSet:
 
 def build_kernel_set(
     author: str, out: Path, *, model: str, isa: str = "sve2", dataset: str = "llama.cpp",
-    solutions_root: Path = SOLUTIONS, kernel: str = "all",
+    solutions_root: Path = SOLUTIONS, kernel: str | list[str] = "all",
     cxx: str = "clang++-18", march: str | None = None, rows_abi: bool = False,
     expect_count: int | None = None, reference_author: str | None = None,
     expect_changed=(), expect_same=(), forbid=(),
@@ -215,8 +215,8 @@ def build_kernel_set(
     """Compile `author`'s solutions into shared objects and write the override manifest to `out`.
 
     model            key of config/e2e_models.json; only definitions tagged `e2e:<model>` are considered
-    kernel           "all": every such definition that the author submitted; or one definition name
-                     that must carry the tag `e2e:<model>`
+    kernel           "all": every such definition that the author submitted; or definition names (one or a
+                     list), each of which must carry the tag `e2e:<model>` and have a solution of the author
     march            override the ISA's -march
     rows_abi         recompile each kernel with N as a runtime thread_local and export
                      armbench_entry_gemm_rows(A,out,B,M,n_rows) too (manifest abi 'entry_rows'), so the
@@ -231,11 +231,17 @@ def build_kernel_set(
 
     solutions = load_author(dataset, author, solutions_root)
     tagged = e2e_definitions(Path(solutions_root).parent, model)
-    if kernel != "all" and kernel not in tagged:
-        raise StepFailed(f"--kernel {kernel!r} is not a definition tagged e2e:{model} under {Path(solutions_root).parent}")
-    selected = tagged if kernel == "all" else {kernel: tagged[kernel]}
-    if kernel != "all" and kernel not in solutions:
-        raise StepFailed(f"author {author!r} has no solution for {kernel!r} under {solutions_root}/{dataset}/{author}/gemm")
+    names = [kernel] if isinstance(kernel, str) else list(kernel)
+    if names == ["all"]:
+        selected = tagged
+    else:
+        untagged = [n for n in names if n not in tagged]
+        if untagged:
+            raise StepFailed(f"--kernel {untagged} not definitions tagged e2e:{model} under {Path(solutions_root).parent}")
+        missing = [n for n in names if n not in solutions]
+        if missing:
+            raise StepFailed(f"author {author!r} has no solution for {missing} under {solutions_root}/{dataset}/{author}/gemm")
+        selected = {n: tagged[n] for n in names}
     kernels, skipped = build_kernels(solutions, author, out_dir, march, selected=selected, rows_abi=rows_abi, cxx=cxx)
     if not kernels:
         raise StepFailed(f"no kernel of {author!r} went into the set for e2e:{model} ({len(skipped)} skipped); "

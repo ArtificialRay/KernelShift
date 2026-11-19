@@ -82,7 +82,7 @@ class Options:
     # evaluate: kernel_set
     author: str | None = None             # whose bench-trace/solutions/<dataset>/<author>/ to compile
     rows_abi: bool = False
-    kernel: str = "all"                   # "all": every definition tagged e2e:<--model>; or one definition name
+    kernel: list[str] = field(default_factory=lambda: ["all"])   # ["all"]: every definition tagged e2e:<--model>; or names
     reference_author: str | None = None   # guards: compare against this author's solutions
     expect_count: int | None = None
     expect_changed: list[str] = field(default_factory=list)
