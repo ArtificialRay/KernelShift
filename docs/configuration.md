@@ -76,6 +76,9 @@ Only needed in specific cases, set in `.env` or the shell.
 | `ARMBENCH_CC_JOB_ROOT` | Parent of the per-job working directories `--harness claude-code` creates (default: the system temp dir); must be outside this repo |
 | `WANDB_INSTANCE_TYPE` | Label recorded on runs logged with `--wandb` |
 | `NANOBOT_CONFIG_BASE` | set your own nanobot config address if `--harness nanobot` |
+| `RSYNC_ALLOWLIST` | Comma-separated repo paths to sync to instances, instead of `config/rsync_allowlist.json` |
+| `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` | `--harness claude-code`: use an API key or a custom endpoint instead of the account `claude login` set up |
+| `OPENROUTER_API_KEY` and the other litellm provider variables | `--harness own`: the key litellm uses for any provider or field that `eval/llm_providers.json` leaves out |
 | `OPENAI_API_KEY`, `OPENAI_API_BASE` (or `OPENAI_BASE_URL`) | Override the key and endpoint in the codex / cline `config.json` |
 | `TF_VAR_ssh_key_files` | Per-label SSH private key as JSON, e.g. `{"ncnn-sme2": "~/.ssh/mac-m4-key.pem"}` (default `~/.ssh/id_rsa`); Terraform imports the `.pub` next to it as that label's key pair |
 
