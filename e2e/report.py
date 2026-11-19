@@ -11,10 +11,16 @@ import statistics
 from pathlib import Path
 
 
+def pp_config(s):
+    """(prompt length, micro-batch) a prompt-processing sample was timed with; None for generation."""
+    return (s["n"], s.get("ub")) if s["kind"] == "pp" else None
+
+
 def medians(samples):
+    """(build, threads, kind, pp_config) -> median tok/s and number of samples."""
     out = {}
     for s in samples:
-        out.setdefault((s["build"], s["threads"], s["kind"]), []).append(s["tok_per_s"])
+        out.setdefault((s["build"], s["threads"], s["kind"], pp_config(s)), []).append(s["tok_per_s"])
     return {k: statistics.median(v) for k, v in out.items()}, {k: len(v) for k, v in out.items()}
 
 
@@ -27,18 +33,20 @@ def render_report(results, baseline: str = "stock") -> str:
     med, n = medians(d.get("samples", []))
     builds = list(dict.fromkeys(s["build"] for s in d.get("samples", [])))
     threads = sorted({s["threads"] for s in d.get("samples", [])})
+    configs = list(dict.fromkeys(pp_config(s) for s in d.get("samples", []) if s["kind"] == "pp"))
+    main = configs[0] if configs else None   # tg was timed with the first pair
     ppl = d.get("perplexity", {}) or {}
 
     say(f"host: {d.get('host','?')}")
-    say(f"model: {Path(d.get('model','?')).name}   pp={d.get('pp')} tg={d.get('tg')} reps={d.get('reps')}\n")
+    say(f"model: {Path(d.get('model','?')).name}   pp={d.get('pp')} tg={d.get('tg')} ub={d.get('ub')} reps={d.get('reps')}\n")
 
-    say("absolute throughput (tok/s, median of reps)")
+    say("absolute throughput (tok/s, median of reps)" + (f"; pp {main[0]}, ub {main[1] or 'default'}" if len(configs) > 1 else ""))
     hdr = "build".ljust(18) + "".join(f"  t={t:<3} pp      tg" for t in threads)
     say(hdr); say("-" * len(hdr))
     for b in builds:
         row = b.ljust(18)
         for t in threads:
-            pp = med.get((b, t, "pp")); tg = med.get((b, t, "tg"))
+            pp = med.get((b, t, "pp", main)); tg = med.get((b, t, "tg", None))
             row += f"  {pp:7.1f} {tg:7.2f}" if pp and tg else "        -       -"
         say(row)
 
@@ -50,11 +58,24 @@ def render_report(results, baseline: str = "stock") -> str:
                 continue
             row = b.ljust(18)
             for t in threads:
-                num_pp, den_pp = med.get((b, t, "pp")), med.get((baseline, t, "pp"))
-                num_tg, den_tg = med.get((b, t, "tg")), med.get((baseline, t, "tg"))
+                num_pp, den_pp = med.get((b, t, "pp", main)), med.get((baseline, t, "pp", main))
+                num_tg, den_tg = med.get((b, t, "tg", None)), med.get((baseline, t, "tg", None))
                 row += (f"  {num_pp/den_pp:6.2f}x {num_tg/den_tg:6.2f}x"
                         if num_pp and den_pp and num_tg and den_tg else "        -       -")
             say(row)
+
+    if len(configs) > 1:
+        say("\nprompt processing sweep (tok/s; speedup vs baseline in brackets)")
+        for t in threads:
+            hdr = f"t={t}".ljust(18) + "".join(f"  pp{n}/ub{u or 'default'}".rjust(18) for n, u in configs)
+            say(hdr); say("-" * len(hdr))
+            for b in builds:
+                row = b.ljust(18)
+                for c in configs:
+                    v, base = med.get((b, t, "pp", c)), med.get((baseline, t, "pp", c))
+                    cell = "-" if v is None else f"{v:.1f}" + (f" [{v/base:.2f}x]" if base and b != baseline else "")
+                    row += cell.rjust(18)
+                say(row)
 
     def ppl_of(name):
         """measure_e2e stores llama-perplexity's raw tail, so pull the number out of it."""

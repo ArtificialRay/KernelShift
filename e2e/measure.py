@@ -20,6 +20,7 @@ import statistics
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 from e2e.errors import StepFailed
@@ -81,7 +82,8 @@ def verify_hook(name: str, b: dict, model: Path, threads: int, fa: str, ub: int 
 
 def measure(
     model: Path, builds: dict, *, overrides: dict | None = None, env: dict | None = None,
-    threads=(4,), pp: int = 512, tg: int = 128, reps: int = 5, fa: str, ub: int | None = None,
+    threads=(4,), pp: int | Sequence[int] = 512, tg: int = 128, reps: int = 5, fa: str,
+    ub: int | None | Sequence[int] = None,
     perplexity: Path | None = None, ppl_chunks: int = 64, out: Path = Path("e2e_results.json"),
 ) -> dict:
     """llama-bench (pp / tg) and optionally llama-perplexity for every build, interleaved, on this
@@ -92,10 +94,17 @@ def measure(
     env         name -> {KEY: VALUE} extra environment for one build (e.g. the single-thread ablation
                 {"agent1t": {"ARMBENCH_OVERRIDE_THREADS": "1"}})
     fa          "on" / "off", passed to llama-bench and llama-perplexity (llama-bench's own default is auto)
-    ub          micro-batch size (-ub); llama.cpp's default (512) if None
-    perplexity  text file for llama-perplexity; ppl_chunks is how many chunks of it to score
+    pp          prompt length, or several: prompt processing is timed for every pp x ub pair
+    ub          micro-batch size (-ub), or several; llama.cpp's default (512) if None.
+                Generation (tg) does not depend on either, so it is timed once, with the first pair.
+    perplexity  text file for llama-perplexity (run with the first ub); ppl_chunks is how many chunks of it to score
     """
     model, out, threads = Path(model), Path(out), list(threads)
+    pps = [pp] if isinstance(pp, int) else list(pp)
+    ubs = [ub] if ub is None or isinstance(ub, int) else (list(ub) or [None])
+    configs = [(u, p) for u in ubs for p in pps]   # (ub, pp); the first one also times tg
+    swept = len(configs) > 1
+    ub = ubs[0]
     builds = {name: {"dir": Path(path).expanduser(), "manifest": None, "env": {}} for name, path in builds.items()}
     for name, path in (overrides or {}).items():
         if name not in builds:
@@ -125,32 +134,40 @@ def measure(
                     env["ARMBENCH_OVERRIDES"] = b["manifest"]
                     env.setdefault("ARMBENCH_OVERRIDE_LOG", "0")
                 env.update(b["env"])
-                for r in llama_bench(b["dir"] / "bin" / "llama-bench", model, nthreads, pp, tg, env,
-                                     fa, ub):
-                    kind = "pp" if r.get("n_prompt", 0) > 0 else "tg"
-                    samples.append({"build": name, "threads": nthreads, "rep": rep, "kind": kind,
-                                    "n": r.get("n_prompt") or r.get("n_gen"),
-                                    "tok_per_s": r["avg_ts"], "raw": r})
-                    print(f"[{time.time()-t0:6.0f}s] rep {rep} {name:8s} t={nthreads:2d} {kind} {r['avg_ts']:8.2f} tok/s", flush=True)
+                for u, p in configs:
+                    for r in llama_bench(b["dir"] / "bin" / "llama-bench", model, nthreads, p,
+                                         tg if (u, p) == configs[0] else 0, env, fa, u):
+                        kind = "pp" if r.get("n_prompt", 0) > 0 else "tg"
+                        samples.append({"build": name, "threads": nthreads, "rep": rep, "kind": kind, "ub": u,
+                                        "n": r.get("n_prompt") or r.get("n_gen"),
+                                        "tok_per_s": r["avg_ts"], "raw": r})
+                        cfg = f"  (n={samples[-1]['n']} ub={u or 'default'})" if swept and kind == "pp" else ""
+                        print(f"[{time.time()-t0:6.0f}s] rep {rep} {name:8s} t={nthreads:2d} {kind} {r['avg_ts']:8.2f} tok/s{cfg}", flush=True)
 
-    summary = {}
+    def cell(name, s):
+        """Summary key of a sample: one per build, threads and kind; with several pp x ub pairs, also per pair."""
+        if not swept or s["kind"] == "tg":
+            return f"{name}/t{s['threads']}/{s['kind']}"
+        return f"{name}/t{s['threads']}/pp{s['n']}/ub{s['ub'] or 'default'}"
+
+    summary, speed_base = {}, {}
     for name in builds:
-        for nthreads in threads:
-            for kind in ("pp", "tg"):
-                xs = [s["tok_per_s"] for s in samples if s["build"] == name and s["threads"] == nthreads and s["kind"] == kind]
-                if xs:
-                    summary[f"{name}/t{nthreads}/{kind}"] = {"median": statistics.median(xs), "max": max(xs),
-                                                             "min": min(xs), "n": len(xs)}
+        xs = {}
+        for s in samples:
+            if s["build"] == name:
+                xs.setdefault(cell(name, s), []).append(s["tok_per_s"])
+                speed_base[cell(name, s)] = cell("stock", s)
+        for k, v in xs.items():
+            summary[k] = {"median": statistics.median(v), "max": max(v), "min": min(v), "n": len(v)}
     if "stock" in builds:
-        for k, v in list(summary.items()):
-            name, t, kind = k.split("/")
-            base = summary.get(f"stock/{t}/{kind}")
-            if base and name != "stock":
+        for k, v in summary.items():
+            base = summary.get(speed_base[k])
+            if base and not k.startswith("stock/"):
                 v["speedup_vs_stock_median"] = v["median"] / base["median"]
 
     def dump(ppl):
-        result = {"model": str(model), "pp": pp, "tg": tg, "reps": reps,
-                  "fa": fa, "ub": ub, "ppl_chunks": ppl_chunks if perplexity else None,
+        result = {"model": str(model), "pp": pps[0] if len(pps) == 1 else pps, "tg": tg, "reps": reps,
+                  "fa": fa, "ub": ubs[0] if len(ubs) == 1 else ubs, "ppl_chunks": ppl_chunks if perplexity else None,
                   "hook": hook,
                   "builds": {n: {"dir": str(b["dir"]), "manifest": b["manifest"], "env": b["env"]} for n, b in builds.items()},
                   "host": os.uname().nodename, "date": time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()),

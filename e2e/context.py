@@ -96,11 +96,11 @@ class Options:
     # evaluate: measure (runs on the box) and report
     llama_dir: str = "~/llama.cpp-e2e"    # holds build-stock / build-norepack / build-agent
     threads: list[int] = field(default_factory=lambda: [4])
-    pp: int = 512
+    pp: list[int] = field(default_factory=lambda: [512])   # several: a prompt-length sweep
     tg: int = 128
     reps: int = 5
     fa: str = "off"
-    ub: int | None = None
+    ub: list[int] = field(default_factory=list)            # micro-batch sizes; several: a sweep; empty: llama.cpp's default
     perplexity: str | None = None         # text file for llama-perplexity; omitted: no quality check
     ppl_chunks: int = 64
     baseline: str = "stock"
