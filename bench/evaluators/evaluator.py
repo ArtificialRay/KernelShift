@@ -99,6 +99,11 @@ class BoundKernel:
         """One kernel call; returns the C return code."""
         return self.entry(*ctx.entry_args)
 
+    def reset_inputs(self, ctx: Any) -> bool:
+        """Restore inputs a kernel overwrites in place; False if the adapter has nothing to restore."""
+        reset = getattr(self.adapter, "reset_inputs", None)
+        return bool(reset and reset(ctx))
+
     def read_output(self, ctx: Any) -> np.ndarray:
         """Read the kernel's output buffer back to numpy."""
         return self.adapter.unwrap_output(ctx)

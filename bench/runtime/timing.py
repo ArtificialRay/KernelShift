@@ -139,6 +139,7 @@ def time_callable(
     cpu: Optional[int] = 0,
     watchdog_s: float = 30.0,
     collect_perf_counters: bool = False,
+    before_call: Optional[Callable[[], None]] = None,
 ) -> TimingResult:
     """Time `inner` with the LOOP_DECL pattern.
 
@@ -164,6 +165,9 @@ def time_callable(
         reporting the per-invocation mean. Best-effort: if the counters can't be
         opened (permissions / non-Linux), timing proceeds and the perf fields on
         the result stay None.
+    before_call
+        Untimed hook run before every call (e.g. restoring an input the kernel
+        sorts in place). Requires inner_iters == 1, so it stays outside the window.
 
     Returns
     -------
@@ -174,10 +178,14 @@ def time_callable(
         raise ValueError("repeat must be >= 1")
     if inner_iters < 1:
         raise ValueError("inner_iters must be >= 1")
+    if before_call is not None and inner_iters != 1:
+        raise ValueError("before_call needs inner_iters == 1")
 
     pinned = pin_to_cpu(cpu) if cpu is not None else None
 
     for _ in range(warmup):
+        if before_call is not None:
+            before_call()
         inner()
 
     # Hardware counters wrap the WHOLE repeat loop with ONE ENABLE/DISABLE, so
@@ -206,6 +214,8 @@ def time_callable(
         if time.monotonic() > deadline:
             aborted_at = r
             break
+        if before_call is not None:
+            before_call()
         t0 = time.perf_counter_ns()
         for _ in range(inner_iters):
             inner()
