@@ -3,7 +3,7 @@ set -e
 
 # ---------------------------------------------------------------------------
 # setup.sh — runs as root via EC2 user_data on first boot
-# Installs clang-18 + llvm-objdump-18 and creates the arm-bench workspace.
+# Installs clang-18 + llvm-objdump-18 and creates the kernelshift workspace.
 # cloud-init status --wait (in the terraform null_resource) will block until
 # this script exits before the rsync + build steps run.
 # ---------------------------------------------------------------------------
@@ -37,8 +37,8 @@ update-alternatives --install /usr/bin/clang        clang        /usr/bin/clang-
 update-alternatives --install /usr/bin/llvm-objdump llvm-objdump /usr/bin/llvm-objdump-18 100
 
 # Create workspace (provisioning/provision.py rsyncs the sources here)
-mkdir -p /home/ubuntu/arm-bench
-chown ubuntu:ubuntu /home/ubuntu/arm-bench
+mkdir -p /home/ubuntu/kernelshift
+chown ubuntu:ubuntu /home/ubuntu/kernelshift
 
 echo "--- setup complete ---"
 clang --version

@@ -320,7 +320,7 @@ def _venv_steps(uv: str) -> list[tuple[str, str, int]]:
         ),
         (
             "pip packages",
-            f"{uv} pip install --python {_VENV_PYTHON} -r ~/arm-bench/requirements.txt",
+            f"{uv} pip install --python {_VENV_PYTHON} -r ~/kernelshift/requirements.txt",
             600,
         ),
     ]
@@ -433,10 +433,10 @@ def provision(
     print(f"[provision] Instance ready at {host}, waiting for SSH...")
     _wait_for_ssh(handle)
 
-    print(f"[provision] Rsyncing source to {host}:~/arm-bench/...")
+    print(f"[provision] Rsyncing source to {host}:~/kernelshift/...")
     handle.rsync_to(
         str(REPO_ROOT),
-        "~/arm-bench",
+        "~/kernelshift",
         paths=RSYNC_ALLOWLIST,
     )
 

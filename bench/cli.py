@@ -27,7 +27,7 @@ from contracts import BASELINE_AUTHORS, BASELINE_AUTHORS_BY_ISA, ISA_TABLE, REFE
 
 
 def _default_root() -> Path:
-    """Default warehouse root: arm-bench/bench-trace/.
+    """Default warehouse root: <repo>/bench-trace/.
 
     The TraceSet expects to find definitions/ + solutions/ + workloads/ +
     traces/ directly under this root.
@@ -209,10 +209,10 @@ def cmd_list_solutions(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="kernelshift", description="arm-bench CPU kernel benchmark CLI")
+    p = argparse.ArgumentParser(prog="kernelshift", description="KernelShift CPU kernel benchmark CLI")
     p.add_argument(
         "--root", type=Path, default=_default_root(),
-        help="arm-bench root dir (default: inferred from bench/ location).",
+        help="repo root dir (default: inferred from bench/ location).",
     )
     p.add_argument(
         "--log-level", default="INFO",

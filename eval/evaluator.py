@@ -1,5 +1,5 @@
 """
-eval/evaluator.py — Agentic LLM evaluation orchestrator for arm-bench.
+eval/evaluator.py — Agentic LLM evaluation orchestrator for KernelShift.
 
 Runs an agent loop where the LLM iteratively uses compile/evaluate/disassemble
 tools against a real Graviton instance over MCP (eval/mcp_client.py — the same

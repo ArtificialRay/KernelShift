@@ -199,7 +199,7 @@ resource "aws_instance" "labeled" {
   # Non-spot instances terminate, not stop, on an OS-initiated shutdown.
   instance_initiated_shutdown_behavior = (var.on_demand || local.is_mac[each.key]) ? "terminate" : null
 
-  # Installs clang-18 + llvm-objdump and creates ~/arm-bench
+  # Installs clang-18 + llvm-objdump and creates ~/kernelshift
   user_data = local.is_mac[each.key] ? null : base64encode(file("${path.module}/setup.sh"))
 
   root_block_device {

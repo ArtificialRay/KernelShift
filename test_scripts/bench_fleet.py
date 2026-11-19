@@ -772,7 +772,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     p.add_argument("--author", default=None, help="Override the computed author (advanced).")
     p.add_argument("--label", default=None, help="Override the computed instance label (advanced).")
     p.add_argument("--instance", default=None, help="EC2 instance type override.")
-    p.add_argument("--remote-root", default="~/arm-bench")
+    p.add_argument("--remote-root", default="~/kernelshift")
     p.add_argument("--remote-port", type=int, default=8765)
     p.add_argument("--on-demand", action="store_true",
                    help="Provision on-demand instead of spot (only affects a freshly "

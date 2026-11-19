@@ -40,7 +40,7 @@ mcp_app/
 ```bash
 # On the target instance, once the repo is synced there.
 python -m mcp_app.server --dataset <ncnn|simd-loop|llama.cpp|kleidiai> --author <tag> \
-    --isa <neon|sve|sve2|sme2|portable> --run-dir ~/arm-bench/agent-runs-mcp/<author>
+    --isa <neon|sve|sve2|sme2|portable> --run-dir ~/kernelshift/agent-runs-mcp/<author>
 ```
 
 One process serves **every** definition in `--dataset` — `compile()` takes

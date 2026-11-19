@@ -343,7 +343,7 @@ python3 -m kgen autovec --isa sve --tag simd-loop
 ```bash
 # MCP server over SSH stdio (connect Claude Code MCP config to it)
 python3 -m mcp_app.server --dataset ncnn --author claude-code --isa sve \
-  --run-dir ~/arm-bench/agent-runs-mcp/claude-code --transport stdio \
+  --run-dir ~/kernelshift/agent-runs-mcp/claude-code --transport stdio \
   --baseline-author baseline-ncnn
 
 # Launch session (skills/launch/)

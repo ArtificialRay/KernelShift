@@ -1,4 +1,4 @@
-"""Concrete C++/AOT kernel Solution for an arm-bench Definition.
+"""Concrete C++/AOT kernel Solution for a KernelShift Definition.
 
 Differs from flashinfer-bench's Solution by adding CPU/AOT specifics:
 - top-level `dataset` field (pins calling convention, must match parent folder)

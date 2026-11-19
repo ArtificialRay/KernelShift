@@ -1,4 +1,4 @@
-"""Concrete builders for the arm-bench compile registry."""
+"""Concrete builders for the KernelShift compile registry."""
 
 from .candidate import CandidateBuilder
 from .llama_cpp import LlamaCppBuilder

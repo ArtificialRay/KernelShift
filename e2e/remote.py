@@ -15,7 +15,7 @@ from pathlib import Path
 from .context import REPO, E2EContext, Options
 from .errors import StepFailed
 
-BOX_REPO = "~/arm-bench"
+BOX_REPO = "~/kernelshift"
 POLL_SECONDS = 30
 LAUNCHER_ONLY = {"steps", "here", "fetch", "root", "provision", "instance_type", "on_demand", "label", "log"}
 

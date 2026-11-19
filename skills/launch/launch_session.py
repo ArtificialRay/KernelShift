@@ -165,7 +165,7 @@ def arm_watchdog(instance: ProvisionedInstance, minutes: int) -> None:
         return
     cmd = "sudo shutdown -c >/dev/null 2>&1; "
     if minutes > 0:
-        cmd += f"sudo shutdown -h +{int(minutes)} 'arm-bench watchdog'"
+        cmd += f"sudo shutdown -h +{int(minutes)} 'kernelshift watchdog'"
     target = instance.target
     try:
         rc, _, err = target.run(cmd, timeout=30)
@@ -263,7 +263,7 @@ def prepare_session(
     isa: str,
     *,
     baseline_author: Optional[str] = None,
-    remote_root: str = "~/arm-bench",
+    remote_root: str = "~/kernelshift",
     sync_repo: bool = True,
     local_repo_dir: Optional[str | Path] = None,
     local_port: Optional[int] = None,
@@ -414,7 +414,7 @@ def sync_results(
     author: str,
     *,
     definition: Optional[str] = None,
-    remote_root: str = "~/arm-bench",
+    remote_root: str = "~/kernelshift",
     local_results_dir: str | Path,
     sync_bench_trace: bool = False,
     local_bench_trace_dir: Optional[str | Path] = None,
@@ -546,7 +546,7 @@ def main(argv: list[str] | None = None) -> None:
     prep.add_argument("--host", required=True)
     prep.add_argument("--user", default="ubuntu")
     prep.add_argument("--key-file", default="~/.ssh/id_rsa")
-    prep.add_argument("--remote-root", default="~/arm-bench")
+    prep.add_argument("--remote-root", default="~/kernelshift")
     prep.add_argument("--dataset", action="append", required=True,
                        choices=["ncnn", "simd-loop", "llama.cpp", "kleidiai"],
                        help="Repeatable — pass more than once to start the remote "
@@ -579,7 +579,7 @@ def main(argv: list[str] | None = None) -> None:
     sync.add_argument("--host", required=True)
     sync.add_argument("--user", default="ubuntu")
     sync.add_argument("--key-file", default="~/.ssh/id_rsa")
-    sync.add_argument("--remote-root", default="~/arm-bench")
+    sync.add_argument("--remote-root", default="~/kernelshift")
     sync.add_argument("--author", required=True,
                        help="Must match the --author the session was actually launched with. "
                             "No default here — unlike `launch`/`prepare-session`, this "
@@ -653,7 +653,7 @@ def main(argv: list[str] | None = None) -> None:
                               "f'{author}_{definition.name}', nothing else disambiguates isa).")
     launch.add_argument("--baseline-author", default=None,
                          help="Override only — the server auto-derives this from --dataset.")
-    launch.add_argument("--remote-root", default="~/arm-bench")
+    launch.add_argument("--remote-root", default="~/kernelshift")
     launch.add_argument("--local-port", type=int, default=8888,
                          help="Fix the local tunnel port instead of picking a random free "
                               "one each run, so a reused mcp client config (e.g. nanobot's) "

@@ -68,7 +68,7 @@ SSH local-port-forward (not exposed publicly), and prints the endpoint.
 | `--baseline-author` | no | auto-derived from `--dataset` | only pass this to override |
 | `--label` | no | `f'{dataset(s)}-{author}'` | name identifying this instance — one per concurrently-desired instance (see `provisioning/provision.py`'s module docstring). Since `--author` already carries isa by default, this alone keeps different isa's on separate instances without extra flags |
 | `--local-repo-dir` | **no** | this checkout's own root (`REPO_ROOT`, computed from where `launch_session.py` itself lives — not your shell's cwd) | your local checkout of this repo, pushed to the instance by `prepare_session`'s rsync |
-| `--remote-root` | no | `~/arm-bench` | where the repo lives on the instance |
+| `--remote-root` | no | `~/kernelshift` | where the repo lives on the instance |
 | `--local-port` | no | `8888` | local end of the SSH tunnel; fixed, so a reused MCP client config doesn't need re-editing every relaunch |
 | `--remote-port` | no | `8765` | port `mcp_app.server` binds to on the instance; change it to run a second session on the same instance |
 | `--no-sync` | flag | off | skip the rsync step (repo already up to date on the instance) |
@@ -113,7 +113,7 @@ genuinely required unless you pass `--no-sync`.
 | `--author` | no | `f'nanobot-{isa}'` | tags every solution/trace this session writes; also names the session's `run_dir` (`agent-runs-mcp/<author>/`). |
 | `--baseline-author` | no | auto-derived from `--dataset` | only pass this to override |
 | `--local-repo-dir` | **yes, unless `--no-sync`** | — | your local checkout of this repo, pushed to the instance |
-| `--remote-root` | no | `~/arm-bench` | where the repo lives on the instance |
+| `--remote-root` | no | `~/kernelshift` | where the repo lives on the instance |
 | `--local-port` | no | `8888` | local end of the SSH tunnel; fixed, so a reused MCP client config doesn't need re-editing every relaunch |
 | `--remote-port` | no | `8765` | port `mcp_app.server` binds to on the instance |
 | `--no-sync` | flag | off | skip the rsync step (repo already up to date on the instance) — makes `--local-repo-dir` optional |
@@ -142,7 +142,7 @@ python3 launch_session.py sync-results \
 | `--host` | yes | — | reachable IP/hostname of the instance |
 | `--user` | no | `ubuntu` | |
 | `--key-file` | no | `~/.ssh/id_rsa` | |
-| `--remote-root` | no | `~/arm-bench` | where the repo lives on the instance |
+| `--remote-root` | no | `~/kernelshift` | where the repo lives on the instance |
 | `--author` | **yes** | — | must match the `--author` the session was actually launched with. No default here —  guessing a static default would silently sync from the wrong directory |
 | `--definition` | no | — (pulls everything this author touched) | sync only this definition's subdirectory |
 | `--local-results-dir` | yes | — | where to pull results down to |

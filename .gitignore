@@ -69,9 +69,6 @@ uv.lock
 notebooks/
 *_trajs/*
 
-# Local clone of the HuggingFace arm-bench-trace dataset (not part of the repo)
-arm-bench/
-
 # Claude Code project settings (keep skills/ but not local config)
 .claude/settings.json
 .claude/settings.local.json

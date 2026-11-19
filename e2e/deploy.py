@@ -52,14 +52,14 @@ def deploy(label: str, model: str | None = None, instance_type: str | None = Non
             raise StepFailed(f"model fetch failed: {err[-500:]}")
 
     if agent_build:
-        box.run("mkdir -p ~/arm-bench-e2e/e2e", timeout=30)   # rsync only creates the last path component
+        box.run("mkdir -p ~/kernelshift-e2e/e2e", timeout=30)   # rsync only creates the last path component
         rc = subprocess.run(["rsync", "-az", "--exclude", "__pycache__", "build_agent.sh", "override",
-                             f"{box.user}@{box.host}:arm-bench-e2e/e2e/",
+                             f"{box.user}@{box.host}:kernelshift-e2e/e2e/",
                              "-e", f"ssh -i {box.key_file} -o StrictHostKeyChecking=accept-new"],
                             cwd=REPO_ROOT / "e2e").returncode
         if rc != 0:
             raise StepFailed("rsync of e2e/build_agent.sh and e2e/override failed")
-        rc, out, err = box.run("bash ~/arm-bench-e2e/e2e/build_agent.sh ~/llama.cpp-e2e", timeout=1800)
+        rc, out, err = box.run("bash ~/kernelshift-e2e/e2e/build_agent.sh ~/llama.cpp-e2e", timeout=1800)
         print(out[-2000:]); print(err[-2000:], file=sys.stderr)
         if rc != 0:
             raise StepFailed("agent build failed")

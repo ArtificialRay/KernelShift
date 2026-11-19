@@ -84,7 +84,7 @@ class LlamaCppBuilder(Builder):
 
     def __init__(self) -> None:
         super().__init__(build_dir_name="kernelshift-llamacpp")
-        self._arm_bench_root = Path(__file__).resolve().parents[3]  # repo dir
+        self._repo_root = Path(__file__).resolve().parents[3]  # repo dir
 
     def can_build(self, solution: Solution, is_baseline: bool) -> bool:
         # llama.cpp solutions are inherently framework-bound baselines; like
@@ -93,7 +93,7 @@ class LlamaCppBuilder(Builder):
         return solution.dataset == SupportedDatasets.LLAMA_CPP
 
     def build(self, definition: Definition, solution: Solution) -> CompileResult:
-        base_root = _llama_cpp_root(self._arm_bench_root)
+        base_root = _llama_cpp_root(self._repo_root)
 
         build_dir, sources_dir = self._make_build_dir(solution)
         try:

@@ -1,4 +1,4 @@
-"""TraceSet — the in-memory warehouse over an arm-bench dataset root.
+"""TraceSet — the in-memory warehouse over a KernelShift dataset root.
 
 A pure warehouse: it loads, indexes, queries (get_baseline_solution /
 get_baseline_min_ns), and persists (add_traces). The benchmark run loops live

@@ -1,7 +1,7 @@
-"""BuilderRegistry — singleton dispatch + build cache for arm-bench.
+"""BuilderRegistry — singleton dispatch + build cache for KernelShift.
 
 Mirrors flashinfer-bench's registry shape (singleton, priority list, hash cache,
-filelock-serialized builds), adapted for arm-bench:
+filelock-serialized builds), adapted for KernelShift:
 
   - the cache key is `(solution.hash(), is_baseline)` — the same solution built
     as a baseline (NcnnBuilder) vs as a candidate (CandidateBuilder) are distinct

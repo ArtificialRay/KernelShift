@@ -74,19 +74,19 @@ class NcnnBuilder(Builder):
 
     def __init__(self) -> None:
         super().__init__(build_dir_name="kernelshift-ncnn")
-        self._arm_bench_root = Path(__file__).resolve().parents[3] # repo dir
-        self._base_root = self._arm_bench_root.parent # repo's parent dir
+        self._repo_root = Path(__file__).resolve().parents[3] # repo dir
+        self._base_root = self._repo_root.parent # repo's parent dir
     def can_build(self, solution: Solution, is_baseline: bool) -> bool:
         return is_baseline and solution.dataset == SupportedDatasets.NCNN
 
     def build(self, definition: Definition, solution: Solution) -> CompileResult:
-        arm_bench_root = self._arm_bench_root
+        repo_root = self._repo_root
         base_root = _ncnn_base_root(self._base_root)
 
         build_dir, sources_dir = self._make_build_dir(solution)
         try:
             return self._build_inner(
-                solution, arm_bench_root, base_root,
+                solution, repo_root, base_root,
                 build_dir, sources_dir,
             )
         except (CompileError, FileNotFoundError):
@@ -94,13 +94,13 @@ class NcnnBuilder(Builder):
             raise
 
     def _build_inner(
-        self, solution, arm_bench_root, base_root,
+        self, solution, repo_root, base_root,
         build_dir, sources_dir,
     ) -> CompileResult:
         solution_src_paths = self._materialize_sources(solution, sources_dir)
 
         mat_factory_cpp = (
-            arm_bench_root / "bench" / "datasets" / "_ncnn_lib" / "_mat_factory.cpp"
+            repo_root / "bench" / "datasets" / "_ncnn_lib" / "_mat_factory.cpp"
         )
         if not mat_factory_cpp.exists():
             raise FileNotFoundError(f"ncnn helper source not found: {mat_factory_cpp}")
@@ -110,7 +110,7 @@ class NcnnBuilder(Builder):
             base_root / "src",
             base_root / "src" / "layer",
             base_root / "src" / "layer" / "arm",
-            arm_bench_root / "starter" / "ncnn",
+            repo_root / "starter" / "ncnn",
         ]
         cmake_src = base_root / "build" / "src"
         if (cmake_src / "platform.h").exists():

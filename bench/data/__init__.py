@@ -1,4 +1,4 @@
-"""arm-bench data layer. Pure schema + warehouse; no compile / no timing."""
+"""KernelShift data layer. Pure schema + warehouse; no compile / no timing."""
 
 from .definition import AxisConst, AxisSpec, AxisVar, Definition, DType, TensorSpec
 from .json_utils import (

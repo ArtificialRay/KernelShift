@@ -7,7 +7,7 @@ in `bench/runtime/timing.py` and read the aggregate once. The group read keeps
 all three counters covering exactly the same execution window, so
 ``ipc = instructions / cycles`` is meaningful.
 
-Cycles is the canonical metric for arm-bench because it is frequency-independent
+Cycles is the canonical metric for KernelShift because it is frequency-independent
 (comparable across DVFS / cores of the same ISA), unlike wall-clock ns.
 
 Graceful degradation

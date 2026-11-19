@@ -1,4 +1,4 @@
-"""Common base classes and type aliases for arm-bench data models."""
+"""Common base classes and type aliases for KernelShift data models."""
 
 from typing import Annotated
 
