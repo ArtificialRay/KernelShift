@@ -7,7 +7,7 @@ clone, stock tools build); the config/e2e_models.json GGUF is then fetched into 
 With agent_build it also derives the override-enabled "agent" build via e2e/build_agent.sh, which is
 rsynced to the box together with e2e/override/.
 
-  deploy("e2e-qwen3.5-4b-sve2", "qwen3.5-4b", "sve2", agent_build=True)    # or: python -m e2e evaluate --steps deploy ...
+  deploy("e2e-qwen3.5-4b-sve2", "qwen3.5-4b", agent_build=True)    # or: python -m e2e evaluate --steps deploy ...
 """
 from __future__ import annotations
 
@@ -22,17 +22,16 @@ from e2e.errors import StepFailed
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def deploy(label: str, model: str | None = None, isa: str = "sve2", agent_build: bool = False,
-           provision: bool = False) -> None:
-    """Bring up the end-to-end measurement tree on the box `label`, driving it over SSH.
+def deploy(label: str, model: str | None = None, instance_type: str | None = None, agent_build: bool = False):
+    """Bring up the end-to-end measurement tree on the box `label`, driving it over SSH, and return the box.
 
-    model        config/e2e_models.json key whose GGUF to fetch into ~/models on the box
-    isa          the instance type to provision when `provision` is set and no box has the label
-    agent_build  also build the override-enabled "agent" tree (and the no-repack control)
-    provision    create the box if none is registered under `label` (spends money)
+    model          config/e2e_models.json key whose GGUF to fetch into ~/models on the box
+    instance_type  create the box with this type if none is registered under `label` (spends money);
+                   None: a missing box is an error
+    agent_build    also build the override-enabled "agent" tree (and the no-repack control)
     """
     from provisioning.provision import ensure_dataset_ready
-    box = get_box(label, create_isa=isa if provision else None)
+    box = get_box(label, create_instance_type=instance_type)
     print(f"[e2e] {label}: {box.user}@{box.host}")
 
     ensure_dataset_ready(box, "llama.cpp-e2e")
@@ -63,3 +62,4 @@ def deploy(label: str, model: str | None = None, isa: str = "sve2", agent_build:
         if rc != 0:
             raise StepFailed("agent build failed")
     print("[e2e] ready")
+    return box

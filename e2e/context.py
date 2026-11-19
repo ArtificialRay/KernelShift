@@ -31,6 +31,19 @@ class RunDir:
     def results(self) -> Path:
         return self.root / "e2e_results.json"
 
+    @property
+    def report(self) -> Path:
+        return self.root / "report.txt"
+
+    @property
+    def log(self) -> Path:
+        """What a run on the box printed; its done-marker is `done`."""
+        return self.root / "evaluate.log"
+
+    @property
+    def done(self) -> Path:
+        return self.root / "evaluate.done"
+
 
 @dataclass(frozen=True)
 class E2EContext:
@@ -57,7 +70,9 @@ class E2EContext:
 class Options:
     """Everything the steps take beyond the context; each field is a command-line flag of `evaluate`."""
 
-    steps: list[str] | None = None        # None: every local step; the box-side ones are only printed
+    steps: list[str] | None = None        # None: every step
+    here: bool = False                    # run the steps in this process (on the box) instead of launching them there
+    fetch: bool = False                   # only pull the run directory back from the box
     root: Path = REPO / "bench-trace"     # the warehouse the steps read and write
 
     # evaluate: kernel_set
@@ -75,6 +90,7 @@ class Options:
     # evaluate: deploy
     label: str | None = None              # provisioning/eval_config.json instance label; default e2e-<model>-<isa>
     provision: bool = False               # create the box if none is registered under the label (spends money)
+    instance_type: str | None = None      # what --provision creates; default: the model's min_measure_instance
     agent_build: bool = False
 
     # evaluate: measure (runs on the box) and report

@@ -45,13 +45,22 @@ def llama_bench(bench_bin: Path, model: Path, threads: int, pp: int, tg: int, en
     return json.loads(out[start:])
 
 
+def llama_commit(build_dir: Path) -> str | None:
+    """Short commit of the llama.cpp checkout the build dir sits in (None if it is not a git tree)."""
+    p = subprocess.run(["git", "-C", str(build_dir.parent), "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
+    return p.stdout.strip() or None
+
+
 HIT_RX = re.compile(r"hit mul_mat type=(\S+) K=(\d+) N=(\d+)")
 
 
-def verify_hook(name: str, b: dict, model: Path, threads: int, fa: str, ub: int | None) -> dict:
-    """Short pp+tg run with logging on; every mul_mat entry of the manifest must be hit."""
+def verify_hook(name: str, b: dict, model: Path, threads: int, fa: str, ub: int | None, log: Path) -> dict:
+    """Short pp+tg run with logging on; every mul_mat entry of the manifest must be hit.
+    The hook's own log lines (which kernels, which ABI, how each call was split) are kept in `log`."""
     want = {(k["type"], int(k["K"]), int(k["N"]))
             for k in json.loads(Path(b["manifest"]).read_text())["kernels"] if k.get("op") == "mul_mat"}
+    if not want:
+        raise StepFailed(f"{name}: {b['manifest']} has no mul_mat kernel, the override would replace nothing")
     env = {**os.environ, **b["env"], "ARMBENCH_OVERRIDES": b["manifest"], "ARMBENCH_OVERRIDE_LOG": "1",
            "ARMBENCH_OVERRIDE_STRICT": "1"}
     cmd = [str(b["dir"] / "bin" / "llama-bench"), "-m", str(model), "-t", str(threads),
@@ -59,6 +68,7 @@ def verify_hook(name: str, b: dict, model: Path, threads: int, fa: str, ub: int 
     if ub:
         cmd += ["-ub", str(ub)]
     p = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=1800)
+    log.write_text("".join(l + "\n" for l in p.stderr.splitlines() if l.startswith("[armbench-override]")) + p.stdout)
     hit = {(t, int(k), int(n)) for t, k, n in HIT_RX.findall(p.stderr)}
     missing = sorted(want - hit)
     if p.returncode != 0 or missing:
@@ -102,7 +112,7 @@ def measure(
     for b in builds.values():
         if b["manifest"]:
             b["env"].setdefault("ARMBENCH_OVERRIDE_STRICT", "1")
-    hook = {name: verify_hook(name, b, model, max(threads), fa, ub)
+    hook = {name: verify_hook(name, b, model, max(threads), fa, ub, out.with_name(f"hook_{name}.log"))
             for name, b in builds.items() if b["manifest"]}
 
     samples = []
@@ -143,7 +153,8 @@ def measure(
                   "fa": fa, "ub": ub, "ppl_chunks": ppl_chunks if perplexity else None,
                   "hook": hook,
                   "builds": {n: {"dir": str(b["dir"]), "manifest": b["manifest"], "env": b["env"]} for n, b in builds.items()},
-                  "host": os.uname().nodename, "summary": summary, "perplexity": ppl, "samples": samples}
+                  "host": os.uname().nodename, "date": time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()),
+                  "llama_cpp_commit": llama_commit(next(iter(builds.values()))["dir"]), "summary": summary, "perplexity": ppl, "samples": samples}
         out.write_text(json.dumps(result, indent=1))
         return result
 

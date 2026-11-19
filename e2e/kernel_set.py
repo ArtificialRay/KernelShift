@@ -234,7 +234,12 @@ def build_kernel_set(
     if kernel != "all" and kernel not in tagged:
         raise StepFailed(f"--kernel {kernel!r} is not a definition tagged e2e:{model} under {Path(solutions_root).parent}")
     selected = tagged if kernel == "all" else {kernel: tagged[kernel]}
+    if kernel != "all" and kernel not in solutions:
+        raise StepFailed(f"author {author!r} has no solution for {kernel!r} under {solutions_root}/{dataset}/{author}/gemm")
     kernels, skipped = build_kernels(solutions, author, out_dir, march, selected=selected, rows_abi=rows_abi, cxx=cxx)
+    if not kernels:
+        raise StepFailed(f"no kernel of {author!r} went into the set for e2e:{model} ({len(skipped)} skipped); "
+                         "measure would time an agent build that replaces nothing")
     manifest = {"framework": FRAMEWORK, "isa": isa, "march": march, "author": author,
                 "kernels": kernels, "skipped": skipped}
     out.write_text(json.dumps(manifest, indent=1))

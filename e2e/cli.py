@@ -1,11 +1,13 @@
 """python -m e2e evaluate ...
 
-  python -m e2e evaluate --model qwen3.5-4b --author AUTHOR [--label BOX] [--agent-build] [--rows-abi]
+  python -m e2e evaluate --model qwen3.5-4b --author AUTHOR [--label BOX] [--provision] [--agent-build] [--rows-abi]
 
 evaluate (after each agent run) kernel_set -> deploy -> measure -> report
 
-The measure step needs the Graviton box: it is printed, not run, unless named with --steps.
-On the box, `python -m e2e evaluate --model M --steps measure ...` runs just that step.
+deploy drives the Graviton box over SSH; kernel_set, measure and report run on it: `evaluate` syncs the
+repo there, runs them detached, follows the log and fetches e2e-runs/<run>/ when they are done
+(--fetch alone pulls it again). `--here` runs the steps in this process: used on the box itself,
+e.g. after logging in, `--here --steps measure` redoes one step.
 """
 from __future__ import annotations
 
@@ -26,7 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--isa", default="sve2")
     p.add_argument("--run-dir", default=None, help="default: e2e-runs/<framework>-<model>-<isa>")
     p.add_argument("--steps", default=None,
-                   help=f"comma-separated subset of {','.join(names)}; named steps run even when they need the box")
+                   help=f"comma-separated subset of {','.join(names)} (default: all)")
+    p.add_argument("--here", action="store_true",
+                   help="run the steps in this process instead of launching them on the box (this is how they run there)")
+    p.add_argument("--fetch", action="store_true", help="only copy the run directory back from the box")
     p.add_argument("--force", action="store_true", help="redo steps whose artifact already exists")
     p.add_argument("--root", type=Path, default=Options().root, help="warehouse root (default: bench-trace/)")
     k = p.add_argument_group("kernel_set")
@@ -43,8 +48,9 @@ def build_parser() -> argparse.ArgumentParser:
     d = p.add_argument_group("deploy")
     d.add_argument("--label", default=None, help="instance label in provisioning/eval_config.json (default: e2e-<model>-<isa>)")
     d.add_argument("--provision", action="store_true", help="create the box if none is registered under the label (spends money)")
+    d.add_argument("--instance-type", default=None, help="what --provision creates (default: the model's min_measure_instance in config/e2e_models.json)")
     d.add_argument("--agent-build", action="store_true", help="also build the override-enabled tree")
-    m = p.add_argument_group("measure (on the box) / report")
+    m = p.add_argument_group("measure / report (their paths are on the box)")
     m.add_argument("--llama-dir", default="~/llama.cpp-e2e")
     m.add_argument("--threads", nargs="+", type=int, default=[4])
     m.add_argument("--pp", type=int, default=512)
