@@ -136,9 +136,8 @@ python -m kgen calibrate --author reference-scalar --baseline-author <baseline a
 - Records `baseline_sqnr_db` on each workload: what the baseline scores on exactly those inputs.
 - `--author` is the solution whose SQNR becomes the floor, so it must do the baseline's own quantization
   arithmetic. `reference-scalar` qualifies only where it is a scalar port of the baseline's arithmetic
-  (llama.cpp and e2e: ggml's `vec_dot`). Where it computes in float32 (KleidiAI: it dequantizes the
-  weights and does not quantize the activations), pass the baseline author itself
-  (`--author baseline-kleidiai-arm --baseline-author baseline-kleidiai-arm`). When unsure, use what the
+  (e.g. llama.cpp and e2e: ggml's `vec_dot`). Where it computes in float32 (e.g. KleidiAI: it dequantizes the
+  weights and does not quantize the activations), pass the baseline author itself. When unsure, use what the
   dataset's existing workloads record in `baseline_sqnr_author`.
 - Recalibrate before trusting `check` whenever the floors may be stale.
 - Authors per dataset are in `config/kernel_contracts.yaml`.
