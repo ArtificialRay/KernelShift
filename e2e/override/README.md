@@ -97,6 +97,7 @@ build/bin/llama-bench -m model.gguf
 
 * **Match Keys (`mul_mat`):** `type` (`src0` ggml type name), `K` (`ne00`), and `N` (`ne01`).
 * **Note:** The `threads` field in JSON is currently reserved/unused (thread count is dynamically controlled by `ggml`'s `nth`).
+* **`row_multiple`** (optional, `entry_rows` only, default 1, must divide `N`): every N-split row range of this kernel is also a multiple of it (see Threading).
 
 ### Supported ABI Variants
 
@@ -149,12 +150,14 @@ Uses thread-local scratchpads (`_Thread_local`) for F32 to BF16 casting without 
 * **Single-threaded (`llamacpp` / `entry`):** thread 0 processes the node; other threads bypass and wait at `ggml`'s node barrier.
 * **Multi-threaded (`entry_rows`):**
   * **M < nth (decode, small batches), N-split:** split along weight rows across worker threads
-    (`chunk = ceil(N / nth)`, rounded up to a multiple of 64 rows for M == 1, 128 for M > 1). Each thread casts its own activation rows.
+    (`chunk = ceil(N / nth)`, rounded up to a multiple of 64 rows for M == 1, 128 for M > 1, or of the lcm of that and the kernel's `row_multiple` when the manifest gives one). Each thread casts its own activation rows.
   * **M >= nth (prefill), M-split:** split along activation rows (`mpt = ceil(M / nth)`). Each thread calls `entry_gemm` for its assigned subset.
 * `ARMBENCH_OVERRIDE_THREADS=1` forces the thread-0 path for all ABIs.
 * **What this asks of a kernel** (the kernel-level benchmark never checks it, since it always passes the full N and runs one thread):
   correct results for any `n_rows` that is a multiple of the granularity, and no shared mutable state.
-  `kernel_set --rows-abi` makes static state `thread_local`.
+  `kernel_set --rows-abi` makes static state `thread_local`. A kernel's own `static_assert(N % d == 0)` (d a literal or a `constexpr` integer)
+  is checked against the full N; when 64 is not a multiple of d, `kernel_set` writes the lcm of those d as the kernel's `row_multiple`,
+  and its rows entry returns 1 (abort) for an `n_rows` that is not a multiple of it, so a hook that ignores the key fails loudly.
 
 
 

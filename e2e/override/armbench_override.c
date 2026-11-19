@@ -84,6 +84,7 @@ struct armbench_kernel {
     int64_t          K;        // mul_mat: ne00 ; rms_norm: ne00 (D)
     int64_t          N;        // mul_mat: ne01
     int              threads;  // reserved, parsed but unused
+    int64_t          row_multiple; // entry_rows: N-split row ranges are multiples of this ("row_multiple", default 1)
     char *           so;
     char *           symbol;
     char *           symbol_rows;  // entry_rows only ("symbol_rows", default armbench_entry_gemm_rows)
@@ -224,7 +225,7 @@ static bool lookup_op(const char * name, enum armbench_op * out) {
 static bool parse_kernel(struct js * s, const char * manifest_path) {
     if (!js_expect(s, '{')) return false;
     char * op = NULL, * type = NULL, * so = NULL, * symbol = NULL, * abi = NULL, * symbol_rows = NULL;
-    int64_t K = -1, N = -1, threads = 1;
+    int64_t K = -1, N = -1, threads = 1, row_multiple = 1;
     bool ok = true;
     js_ws(s);
     if (s->p < s->end && *s->p == '}') { s->p++; return true; }  // empty object: ignore
@@ -240,6 +241,7 @@ static bool parse_kernel(struct js * s, const char * manifest_path) {
         else if (strcmp(key, "K")       == 0) { ok = js_number(s, &K); }
         else if (strcmp(key, "N")       == 0) { ok = js_number(s, &N); }
         else if (strcmp(key, "threads") == 0) { ok = js_number(s, &threads); }
+        else if (strcmp(key, "row_multiple") == 0) { ok = js_number(s, &row_multiple); }
         else                                  { ok = js_skip_value(s); }
         free(key);
         if (!ok) break;
@@ -260,6 +262,7 @@ static bool parse_kernel(struct js * s, const char * manifest_path) {
         else if (k.op == ARMBENCH_OP_MUL_MAT) {
             if (!type || !lookup_type(type, &k.type)) err = "missing/unknown \"type\" (use a ggml type name, e.g. q4_K)";
             else if (K <= 0 || N <= 0)                err = "\"K\" and \"N\" must be > 0";
+            else if (row_multiple <= 0 || N % row_multiple != 0) err = "\"row_multiple\" must be > 0 and divide \"N\"";
         } else if (k.op == ARMBENCH_OP_RMS_NORM) {
             if (K <= 0)                               err = "\"K\" (=D) must be > 0";
         }
@@ -267,7 +270,7 @@ static bool parse_kernel(struct js * s, const char * manifest_path) {
             fprintf(stderr, "[armbench-override] %s: skipping entry (%s)\n", manifest_path, err);
             g_skipped++;
         } else {
-            k.K = K; k.N = N; k.threads = (int) threads;
+            k.K = K; k.N = N; k.threads = (int) threads; k.row_multiple = row_multiple;
             k.so = so; k.symbol = symbol; so = symbol = NULL;
             if (k.abi == ARMBENCH_ABI_ENTRY_ROWS) {
                 k.symbol_rows = symbol_rows ? symbol_rows : strdup(ARMBENCH_ROWS_SYMBOL_DEFAULT);
@@ -406,9 +409,9 @@ static void armbench_override_init_impl(void) {
                 g_force_single ? " (ARMBENCH_OVERRIDE_THREADS=1: single-thread dispatch forced)" : "");
         for (int i = 0; i < g_nkernels; i++) {
             const struct armbench_kernel * k = &g_kernels[i];
-            fprintf(stderr, "[armbench-override]   %s type=%s K=%" PRId64 " N=%" PRId64 " abi=%s threads=%d -> %s:%s\n",
+            fprintf(stderr, "[armbench-override]   %s type=%s K=%" PRId64 " N=%" PRId64 " abi=%s threads=%d row_multiple=%" PRId64 " -> %s:%s\n",
                     armbench_op_names[k->op], k->op == ARMBENCH_OP_MUL_MAT ? ggml_type_name(k->type) : "-",
-                    k->K, k->N, armbench_abi_names[k->abi], k->threads, k->so, k->symbol);
+                    k->K, k->N, armbench_abi_names[k->abi], k->threads, k->row_multiple, k->so, k->symbol);
         }
     }
 #endif
@@ -456,6 +459,8 @@ static void * scratch_get(size_t bytes) {
     }
     return tl_scratch;
 }
+
+static int64_t gcd64(int64_t a, int64_t b) { while (b) { const int64_t t = a % b; a = b; b = t; } return a; }
 
 static struct armbench_kernel * find_mul_mat(enum ggml_type type, int64_t K, int64_t N) {
     for (int i = 0; i < g_nkernels; i++) {
@@ -556,7 +561,10 @@ bool armbench_override_mul_mat(const struct ggml_compute_params * params, struct
             // threads only 2 threads got work and the build ran ~4.7x SLOWER than stock ggml,
             // which parallelises over N and uses all of them. Covers decode (M==1) and the
             // small-batch prefill / speculative-decode range in one branch.
-            const int64_t gran  = (M > 1) ? ARMBENCH_N_CHUNK_BATCH : ARMBENCH_N_CHUNK;
+            int64_t gran = (M > 1) ? ARMBENCH_N_CHUNK_BATCH : ARMBENCH_N_CHUNK;
+            // a kernel whose static_assert(N % d == 0) the granularity does not cover carries
+            // "row_multiple" (kernel_set.py): round its ranges to lcm(gran, row_multiple) too
+            if (k->row_multiple > 1) gran = gran / gcd64(gran, k->row_multiple) * k->row_multiple;
             const int64_t chunk = ((N + nth - 1) / nth + gran - 1) / gran * gran;
             const int64_t r0 = (int64_t) ith * chunk;
             if (r0 >= N) return true;
