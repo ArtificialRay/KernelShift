@@ -56,9 +56,7 @@ def _system_mounts() -> list[str]:
 
 
 def _bwrap() -> str:
-    """Absolute path of bwrap, resolved on this process's PATH. The sandboxed child gets a
-    minimal PATH (runtime bins + /usr/local/bin:/usr/bin:/bin), so a bare "bwrap" would not be
-    found there when it is installed elsewhere (e.g. ~/.local/bin)."""
+    """Absolute path of bwrap, resolved on this process's PATH. """
     path = shutil.which("bwrap")
     if path is None:
         raise RuntimeError("--file-sandbox bwrap requires bubblewrap (bwrap) on PATH")
