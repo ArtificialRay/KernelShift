@@ -26,7 +26,7 @@ results later with the same command plus `--fetch`. `--text FILE` is a path on t
 | Step | Runs | What it does | Main options |
 |---|---|---|---|
 | `kernel_set` | box | Compiles the author's submitted kernels into shared objects (clang++-18, aarch64) and writes the manifest that tells llama.cpp which matmuls to replace. | `--author` (required), `--kernel all\|NAME...`, `--rows-abi`, `--reference-author` with `--expect-changed`, `--expect-same`, `--expect-count`, `--forbid` |
-| `deploy` | launcher, over SSH | Builds the pinned llama.cpp tools tree on the box, downloads the model, and with `--agent-build` builds the variant with the replacement hook. | `--label`, `--provision`, `--instance-type`, `--agent-build` |
+| `deploy` | launcher, over SSH | Builds the pinned llama.cpp tools tree on the box, downloads the model, and with `--agent-build` builds the variant with the replacement hook. | `--label`, `--provision`, `--instance-type`, `--on-demand`, `--agent-build` |
 | `measure` | box | llama-bench for each build, interleaved and repeated, and llama-perplexity. Fails if `build-agent` exists but the manifest is missing or empty. | `--text FILE`, `--kld`, `--threads`, `--pp`, `--ub`, `--tg`, `--reps`, `--fa` |
 | `kvr` | box | Optional (`--kvr`). Times every kernel of the manifest on one thread against llama.cpp's repack and norepack paths, for several M. | `--kvr-m` |
 | `report` | box | Prints throughput, speedup, perplexity and agreement with stock of the builds (and the `kvr` table) as tables, saved as `report.txt`. If the results file is missing it is rebuilt from `--log`, the output `measure` printed. | `--baseline`, `--log` |

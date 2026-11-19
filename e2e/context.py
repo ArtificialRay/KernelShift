@@ -95,6 +95,7 @@ class Options:
     label: str | None = None              # provisioning/eval_config.json instance label; default e2e-<model>-<isa>
     provision: bool = False               # create the box if none is registered under the label (spends money)
     instance_type: str | None = None      # what --provision creates; default: the model's min_measure_instance
+    on_demand: bool = False               # --provision creates an on-demand instance instead of spot
     agent_build: bool = False
 
     # evaluate: measure (runs on the box) and report

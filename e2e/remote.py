@@ -17,7 +17,7 @@ from .errors import StepFailed
 
 BOX_REPO = "~/arm-bench"
 POLL_SECONDS = 30
-LAUNCHER_ONLY = {"steps", "here", "fetch", "root", "provision", "instance_type", "label", "log"}
+LAUNCHER_ONLY = {"steps", "here", "fetch", "root", "provision", "instance_type", "on_demand", "label", "log"}
 
 
 def box_args(ctx: E2EContext, opts: Options, steps: list[str]) -> list[str]:

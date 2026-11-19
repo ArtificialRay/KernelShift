@@ -22,16 +22,18 @@ from e2e.errors import StepFailed
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def deploy(label: str, model: str | None = None, instance_type: str | None = None, agent_build: bool = False):
+def deploy(label: str, model: str | None = None, instance_type: str | None = None, agent_build: bool = False,
+           on_demand: bool = False):
     """Bring up the end-to-end measurement tree on the box `label`, driving it over SSH, and return the box.
 
     model          config/e2e_models.json key whose GGUF to fetch into ~/models on the box
     instance_type  create the box with this type if none is registered under `label` (spends money);
                    None: a missing box is an error
     agent_build    also build the override-enabled "agent" tree (and the no-repack control)
+    on_demand      create it on-demand instead of spot (a spot box can be reclaimed mid-run)
     """
     from provisioning.provision import ensure_dataset_ready
-    box = get_box(label, create_instance_type=instance_type)
+    box = get_box(label, create_instance_type=instance_type, on_demand=on_demand)
     print(f"[e2e] {label}: {box.user}@{box.host}")
 
     ensure_dataset_ready(box, "llama.cpp-e2e")

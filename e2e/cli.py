@@ -49,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--label", default=None, help="instance label in provisioning/eval_config.json (default: e2e-<model>-<isa>)")
     d.add_argument("--provision", action="store_true", help="create the box if none is registered under the label (spends money)")
     d.add_argument("--instance-type", default=None, help="what --provision creates (default: the model's min_measure_instance in config/e2e_models.json)")
+    d.add_argument("--on-demand", action="store_true", help="--provision creates an on-demand instance instead of spot (spot can be reclaimed mid-run)")
     d.add_argument("--agent-build", action="store_true", help="also build the override-enabled tree")
     m = p.add_argument_group("measure / report (their paths are on the box)")
     m.add_argument("--llama-dir", default="~/llama.cpp-e2e")

@@ -47,7 +47,7 @@ def run_deploy(ctx: E2EContext, opts: Options):
     """llama.cpp tools tree, the model and (with agent_build) the override build, on the box. Returns the box."""
     from .deploy import deploy
     instance_type = (opts.instance_type or ctx.model_config["min_measure_instance"]) if opts.provision else None
-    return deploy(box_label(ctx, opts), ctx.model, instance_type, opts.agent_build)
+    return deploy(box_label(ctx, opts), ctx.model, instance_type, opts.agent_build, opts.on_demand)
 
 
 def run_measure(ctx: E2EContext, opts: Options) -> dict:
@@ -65,7 +65,7 @@ def run_measure(ctx: E2EContext, opts: Options) -> dict:
     model = Path("~/models").expanduser() / ctx.model_config["file"]
     return measure(model, builds, overrides=overrides, threads=opts.threads, pp=opts.pp, tg=opts.tg,
                    reps=opts.reps, fa=opts.fa, ub=opts.ub,
-                   text=Path(opts.text) if opts.text else None,
+                   text=Path(opts.text).expanduser() if opts.text else None,
                    ppl_chunks=opts.ppl_chunks, kld_chunks=opts.kld_chunks if opts.kld else None, out=ctx.run.results)
 
 
