@@ -1,24 +1,23 @@
-"""Finding the Graviton box a step is to drive over SSH.
-
-Nothing in e2e starts a box: it is provisioned with provisioning/provision.py (or by
-bench_fleet.py) and registered in provisioning/eval_config.json under a label."""
+"""The Graviton box a step drives over SSH, looked up through provisioning/ by its label
+(`e2e-<model>-<isa>` unless `--label` is given)."""
 from __future__ import annotations
-
-import sys
-from pathlib import Path
 
 from e2e.errors import StepFailed
 
-REPO = Path(__file__).resolve().parents[2]
 
+def get_box(label: str, *, create_instance_type: str | None = None, on_demand: bool = False):
+    """The InstanceHandle (provisioning/remote.py) of the box under `label`.
 
-def instance_for(label: str):
-    """The registered ProvisionedInstance for `label` (its .target is the RemoteTarget)."""
-    for path in (REPO / "skills" / "launch", REPO):
-        if str(path) not in sys.path:
-            sys.path.insert(0, str(path))
-    from launch_session import _read_config_instance
-    inst = _read_config_instance(label)
-    if inst is None:
-        raise StepFailed(f"no instance under label {label!r} in provisioning/eval_config.json")
-    return inst
+    If there is none and `create_instance_type` is given, an instance of that type is provisioned first
+    (with the llama.cpp-e2e tree built; spot unless `on_demand`); otherwise a missing box is an error."""
+    from provisioning.provision import get_running_instance, provision
+    box = get_running_instance(label)
+    if box is not None:
+        return box
+    if create_instance_type is None:
+        raise StepFailed(
+            f"no instance under label {label!r} in provisioning/eval_config.json; start one with "
+            f"`python -m e2e evaluate --provision --label {label} ...` "
+            f"or provisioning/provision.py --label {label} --instance <type>")
+    print(f"[e2e] provisioning {create_instance_type} ({'on-demand' if on_demand else 'spot'}) under label {label!r}")
+    return provision(label, create_instance_type, "llama.cpp-e2e", on_demand=on_demand)

@@ -66,7 +66,10 @@ static const char * const armbench_abi_names[ARMBENCH_ABI_COUNT] = {
 };
 
 #define ARMBENCH_ROWS_SYMBOL_DEFAULT "armbench_entry_gemm_rows"
-#define ARMBENCH_N_CHUNK 64   // decode N-split granularity (rows)
+#define ARMBENCH_N_CHUNK 64         // N-split granularity (rows) when M == 1
+#ifndef ARMBENCH_N_CHUNK_BATCH
+#define ARMBENCH_N_CHUNK_BATCH 128  // ... when 1 < M < nth: batched kernel paths often work in 128-row tiles
+#endif
 
 // op name table: adding an op = add an enum value + a row here + a hook function.
 static const char * const armbench_op_names[ARMBENCH_OP_COUNT] = {
@@ -553,7 +556,8 @@ bool armbench_override_mul_mat(const struct ggml_compute_params * params, struct
             // threads only 2 threads got work and the build ran ~4.7x SLOWER than stock ggml,
             // which parallelises over N and uses all of them. Covers decode (M==1) and the
             // small-batch prefill / speculative-decode range in one branch.
-            const int64_t chunk = ((N + nth - 1) / nth + ARMBENCH_N_CHUNK - 1) / ARMBENCH_N_CHUNK * ARMBENCH_N_CHUNK;
+            const int64_t gran  = (M > 1) ? ARMBENCH_N_CHUNK_BATCH : ARMBENCH_N_CHUNK;
+            const int64_t chunk = ((N + nth - 1) / nth + gran - 1) / gran * gran;
             const int64_t r0 = (int64_t) ith * chunk;
             if (r0 >= N) return true;
             const int64_t n_i = (r0 + chunk < N ? r0 + chunk : N) - r0;
