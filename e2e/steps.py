@@ -69,15 +69,28 @@ def run_measure(ctx: E2EContext, opts: Options) -> dict:
                    ppl_chunks=opts.ppl_chunks, kld_chunks=opts.kld_chunks if opts.kld else None, out=ctx.run.results)
 
 
+def run_kvr(ctx: E2EContext, opts: Options) -> list:
+    """Each manifest kernel against llama.cpp's repack / norepack paths, single-threaded, per M."""
+    from .kvr import kvr
+    return kvr(ctx.run.manifest, Path(opts.llama_dir), ctx.run.kvr, ms=opts.kvr_m)
+
+
 def run_report(ctx: E2EContext, opts: Options) -> str:
-    """Throughput, speedup and perplexity of the measured builds, as one table (also saved as report.txt).
-    Without a results file it is rebuilt from the measure output given with --log."""
-    from .report import render_report
-    if not ctx.run.results.exists():
-        from .report_from_log import results_from_log
-        results_from_log(require(opts.log, "--log (measure's output) when there is no results file", "report"),
-                         ctx.run.results, model=ctx.model_config["file"], pp=opts.pp, tg=opts.tg)
-    text = render_report(ctx.run.results, opts.baseline)
+    """Throughput, speedup, perplexity and agreement with stock of the measured builds, and the per-kernel
+    comparison of the kvr step, as tables (also saved as report.txt).
+    Without a results file it is rebuilt from the measure output given with --log; with only the kvr
+    result, the report is just its table."""
+    from .report import render_kvr, render_report
+    parts = []
+    if ctx.run.results.exists() or opts.log or not ctx.run.kvr.exists():
+        if not ctx.run.results.exists():
+            from .report_from_log import results_from_log
+            results_from_log(require(opts.log, "--log (measure's output) when there is no results file", "report"),
+                             ctx.run.results, model=ctx.model_config["file"], pp=opts.pp, tg=opts.tg)
+        parts.append(render_report(ctx.run.results, opts.baseline))
+    if ctx.run.kvr.exists():
+        parts.append(render_kvr(ctx.run.kvr))
+    text = "\n\n".join(parts)
     ctx.run.report.write_text(text + "\n")
     print(text)
     return text
@@ -89,12 +102,14 @@ class Step:
     run: Callable[[E2EContext, Options], object]
     on_box: bool = True                                         # runs on the box (False: drives it over SSH)
     outputs: Callable[[E2EContext], list] = lambda ctx: []      # artifacts that mean "already done"
+    optional: bool = False                                      # not in the default run: --<name> or --steps adds it
 
 
 STEPS = (
     Step("kernel_set", run_kernel_set, outputs=lambda ctx: [ctx.run.manifest]),
     Step("deploy", run_deploy, on_box=False),
     Step("measure", run_measure, outputs=lambda ctx: [ctx.run.results]),
+    Step("kvr", run_kvr, outputs=lambda ctx: [ctx.run.kvr], optional=True),
     Step("report", run_report),
 )
 
@@ -104,7 +119,9 @@ def selected(opts: Options) -> list[Step]:
     unknown = [n for n in opts.steps or [] if n not in known]
     if unknown:
         raise SystemExit(f"evaluate has no step(s) {unknown}; steps: {known}")
-    return [s for s in STEPS if opts.steps is None or s.name in opts.steps]
+    if opts.steps is not None:
+        return [s for s in STEPS if s.name in opts.steps]
+    return [s for s in STEPS if not s.optional or getattr(opts, s.name)]
 
 
 def run_here(ctx: E2EContext, opts: Options, steps: list[Step]) -> int:

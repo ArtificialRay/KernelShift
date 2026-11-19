@@ -2,7 +2,7 @@
 
   python -m e2e evaluate --model qwen3.5-4b --author AUTHOR [--label BOX] [--provision] [--agent-build] [--rows-abi]
 
-evaluate (after each agent run) kernel_set -> deploy -> measure -> report
+evaluate (after each agent run) kernel_set -> deploy -> measure -> [kvr] -> report    (kvr: --kvr, optional)
 
 deploy drives the Graviton box over SSH; kernel_set, measure and report run on it: `evaluate` syncs the
 repo there, runs them detached, follows the log and fetches e2e-runs/<run>/ when they are done
@@ -62,6 +62,8 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--ppl-chunks", type=int, default=64)
     m.add_argument("--kld", action="store_true", help="also compare every build's output with stock's (KL divergence); needs --text")
     m.add_argument("--kld-chunks", type=int, default=32, help="chunks of the text the KL divergence is computed on")
+    m.add_argument("--kvr", action="store_true", help="also run the kvr step: each kernel against llama.cpp's own (repack / norepack) paths, per M")
+    m.add_argument("--kvr-m", nargs="+", type=int, default=[1, 2, 4, 8, 16, 32, 128, 512], help="kvr: the M values (rows of the activation) to time")
     m.add_argument("--baseline", default="stock", help="report: the build speedups are relative to")
     m.add_argument("--log", default=None, help="report: measure's printed output, to rebuild a missing results file")
     return p

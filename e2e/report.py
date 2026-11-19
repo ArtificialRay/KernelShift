@@ -118,3 +118,20 @@ def render_report(results, baseline: str = "stock") -> str:
     if short:
         say(f"\nwarning: {len(short)} (build, threads, kind) cells have fewer than {d.get('reps')} samples")
     return "\n".join(lines)
+
+
+def render_kvr(path) -> str:
+    """The table of the kvr step's kvr.jsonl: one line per kernel and M, single-threaded.
+    repack / norepack / agent are the best time in us of ggml's repacked path, ggml without repack and the
+    agent's kernel; a/repack and a/norepack are speedups of the agent over each (> 1: the agent is faster);
+    sqnr is the agent's output against the repack path, in dB."""
+    rows = [json.loads(l) for l in Path(path).read_text().splitlines() if l.strip()]
+    f = lambda v, p=1: "-" if v is None else f"{v:.{p}f}"
+    hdr = (f"{'kernel':34} {'M':>4} {'repack':>9} {'norepack':>9} {'agent':>9} {'a/repack':>9} "
+           f"{'a/norepack':>10} {'sqnr':>6}")
+    lines = ["per kernel, single thread (us; speedup of the agent over ggml's repack / norepack path)", hdr, "-" * len(hdr)]
+    for r in rows:
+        lines.append(f"{r['shape']:34} {r['M']:>4} {f(r['t_repack_min_us']):>9} {f(r['t_norepack_min_us']):>9} "
+                     f"{f(r['t_agent_min_us']):>9} {f(r['agent_vs_repack'], 2):>9} {f(r['agent_vs_norepack'], 2):>10} "
+                     f"{f(r.get('sqnr_db', r.get('sqnr_agent_vs_repack_db'))):>6}" + ("" if r["repack_used"] else "   (no repack kernel for this shape)"))
+    return "\n".join(lines)

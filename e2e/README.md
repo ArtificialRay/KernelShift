@@ -28,7 +28,8 @@ results later with the same command plus `--fetch`. `--text FILE` is a path on t
 | `kernel_set` | box | Compiles the author's submitted kernels into shared objects (clang++-18, aarch64) and writes the manifest that tells llama.cpp which matmuls to replace. | `--author` (required), `--kernel all\|NAME`, `--rows-abi`, `--reference-author` with `--expect-changed`, `--expect-same`, `--expect-count`, `--forbid` |
 | `deploy` | launcher, over SSH | Builds the pinned llama.cpp tools tree on the box, downloads the model, and with `--agent-build` builds the variant with the replacement hook. | `--label`, `--provision`, `--instance-type`, `--agent-build` |
 | `measure` | box | llama-bench for each build, interleaved and repeated, and llama-perplexity. Fails if `build-agent` exists but the manifest is missing or empty. | `--text FILE`, `--kld`, `--threads`, `--pp`, `--ub`, `--tg`, `--reps`, `--fa` |
-| `report` | box | Prints throughput, speedup and perplexity of the builds as one table, saved as `report.txt`. If the results file is missing it is rebuilt from `--log`, the output `measure` printed. | `--baseline`, `--log` |
+| `kvr` | box | Optional (`--kvr`). Times every kernel of the manifest on one thread against llama.cpp's repack and norepack paths, for several M. | `--kvr-m` |
+| `report` | box | Prints throughput, speedup, perplexity and agreement with stock of the builds (and the `kvr` table) as tables, saved as `report.txt`. If the results file is missing it is rebuilt from `--log`, the output `measure` printed. | `--baseline`, `--log` |
 
 `--steps a,b` runs only some of them; a step whose result is already in the run directory is skipped, you can use `--force` to redo the whole process.
 
@@ -41,9 +42,15 @@ results later with the same command plus `--fetch`. `--text FILE` is a path on t
   fails if a kernel you meant to change is byte-identical to PREV's.
 - Control run: `--author reference-scalar --rows-abi` builds the scalar set, which should reproduce stock perplexity.
 
-The run directory holds `manifest.json` and the `.so` files, `e2e_results.json` (every sample, the
-summary, perplexity, host, date and llama.cpp commit), `hook_agent.log` (which kernels the hook replaced,
-with which ABI and how each call was split), `kld_<build>.log` (with `--kld`), `report.txt` and `evaluate.log` (what the box printed).
+The run directory `e2e-runs/llamacpp-<model>-<isa>/` holds:
+
+- `manifest.json` and the kernels' `.so` files (`kernel_set`): which matmuls the hook replaces, and what it is replaced to.
+- `e2e_results.json` (`measure`): every llama-bench sample, the median/min/max summary, perplexity and KL-divergence numbers, the hook check, host, date and llama.cpp commit.
+- `hook_agent.log` (`measure`): which kernels the hook replaced, with which ABI, and how each call was split across threads.
+- `kld_<build>.log` (`measure --kld`): llama-perplexity's full KL-divergence output for each build.
+- `kvr.jsonl` (`kvr`): per-kernel timings against llama.cpp's paths, one line per shape and M.
+- `report.txt` (`report`): the tables of all of the above.
+- `evaluate.log`: what the steps printed on the box.
 
 Tearing the box down stays with `provisioning/provision.py --teardown --label ...`.
 
@@ -69,7 +76,7 @@ Options that change how they run:
 - `--fa on|off` (flash attention): a different way to compute attention, which is not what the agent replaced. Default `off`: on the Graviton box llama.cpp's own `auto` choice picked the slower path, which
   made the long-prompt numbers misleading.
 - `--text FILE` (a text file on the box) is the text the quality checks run on; without it none runs.
-  - **Perplexity**: how well each build predicts the text, lower is better; the agent's build should be close to stock's. `--ppl-chunks N` sets how much of the text is used: the first N chunks, a chunk being a window of 512 tokens (default 64, about 32K tokens).
+  - **Perplexity**: how well each build predicts the text, lower is better. `--ppl-chunks N` sets only first N chunks are used to compute perplexity, a chunk is a window of 512 tokens, and `N=64` by default
 - `--kld` (needs `--text`) compares every build with stock at each position of the first `--kld-chunks` chunks of the text (default 32, about 16K tokens):
   - **Mean KLD**: how far the build's next-token probabilities are from stock's; 0 means identical, smaller is better.
   - **RMS Δp**: how much the probability of the token that actually comes next in the text differs from stock's.
@@ -90,3 +97,25 @@ What each one is for:
 
 With several values, prompt processing is timed for every pp x ub pair, all in the same
 `e2e_results.json`, and the report gets one more table.
+
+### Per-kernel comparison (`--kvr`)
+
+The end-to-end run measures the whole model. `--kvr` adds one more step, `kvr`, that measures each kernel alone.
+
+It takes each kernel in the manifest and runs the same matrix multiplication three ways:
+
+- **repack**: with ggml's fastest built-in code. This is what stock llama.cpp uses.
+- **norepack**: with ggml's plain built-in code. This is what the norepack build uses.
+- **agent**: with the agent's kernel.
+
+All three get the same weights and the same input, and run on one thread. This is repeated for several M (the
+number of input rows; `--kvr-m`, default 1 to 512).
+
+For each kernel and M, the result says:
+
+- how long each of the three took;
+- how many times faster the agent's kernel is than each of the other two;
+- how close the agent's output is to ggml's output (SQNR, in dB; higher means closer).
+
+The results go to `kvr.jsonl` and into `report.txt`. How the test works and how to run it by hand:
+`e2e/kvr/README.md`.

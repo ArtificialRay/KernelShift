@@ -32,6 +32,10 @@ class RunDir:
         return self.root / "e2e_results.json"
 
     @property
+    def kvr(self) -> Path:
+        return self.root / "kvr.jsonl"
+
+    @property
     def report(self) -> Path:
         return self.root / "report.txt"
 
@@ -105,5 +109,7 @@ class Options:
     ppl_chunks: int = 64
     kld: bool = False                     # also the KL divergence of each build against stock (needs text)
     kld_chunks: int = 32
+    kvr: bool = False                     # also the kvr step: per-kernel timing against llama.cpp's own paths
+    kvr_m: list[int] = field(default_factory=lambda: [1, 2, 4, 8, 16, 32, 128, 512])   # its row counts
     baseline: str = "stock"
     log: str | None = None                # report: measure's printed output, to rebuild a missing results file
