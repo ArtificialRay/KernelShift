@@ -1,18 +1,14 @@
-# eval/ — own harness (in-repo litellm agent loop) and single-shot
+# eval/ — own harness (in-repo litellm agent loop)
 
-Two ways to run a model against the MCP server without an external agent CLI.
-Both are driven by `test_scripts/bench_fleet.py`, which owns the same
+A way to run a model against the MCP server without an external agent CLI.
+It is driven by `test_scripts/bench_fleet.py`, which owns the same
 lifecycle it gives every other harness: provision or reuse the instance,
 start `mcp_app/server.py` on it, run the jobs, sync results back.
 
-- `--harness own` — `eval/evaluator.py::run_agentic_eval`, a litellm tool-call
-  loop. The model calls `check_progress` / `compile` / `evaluate` /
-  `disassemble` until it stops or runs out of budget. There is no separate
-  submit tool here: `evaluate()` persists the best version on the instance.
-- `--harness single-shot` — `eval/single_shot.py::run_single_shot`. One
-  completion with no tools, `--samples` times per definition. Each kernel that
-  comes back is compiled and measured once through the same MCP
-  `compile`/`evaluate`, so the number is comparable with a multi-turn run.
+`--harness own` runs `eval/evaluator.py::run_agentic_eval`, a litellm tool-call
+loop. The model calls `check_progress` / `compile` / `evaluate` /
+`disassemble` until it stops or runs out of budget. There is no separate
+submit tool here: `evaluate()` persists the best version on the instance.
 
 ## Prerequisites
 
@@ -74,14 +70,7 @@ python3 test_scripts/bench_fleet.py --harness own --model anthropic/claude-opus-
     --dataset simd-loop --isa portable
 ```
 
-**Single shot, five samples per definition:**
-```bash
-python3 test_scripts/bench_fleet.py --harness single-shot --model anthropic/claude-opus-4-8 \
-    --dataset llama.cpp --isa sve --samples 5
-```
-
-**Keep resuming until every definition has a complete trajectory** (not
-available for `single-shot`, which never submits):
+**Keep resuming until every definition has a complete trajectory:**
 ```bash
 python3 test_scripts/bench_fleet.py --harness own --model anthropic/claude-opus-4-8 \
     --dataset ncnn llama.cpp --isa sve --until-complete --max-parallel-instances 2
@@ -99,8 +88,6 @@ Run `python3 test_scripts/bench_fleet.py --help` for the full list.
 | `--definitions` | all | One name, a space-separated list, or a quoted JSON array |
 | `--max-iterations` | `40` | Hard cap on compile/evaluate/disassemble calls per definition, enforced by the MCP server and stated in the prompt. The `own` loop itself stops after three times as many turns. |
 | `--min-iterations` | `15` | Floor: the model is told not to stop earlier |
-| `--samples` | `3` | `single-shot` only: independent generations per definition. Failed samples are kept, so the pass rate is part of the result. |
-| `--temperature` | `1.0` | `single-shot` only |
 | `--retries` | `3` | Retries only when the OS temporarily cannot start the harness process; model/API errors stay with the harness |
 | `--batch-size` | `3` | Jobs per chunk, run serially on one instance worker |
 | `--max-parallel-instances` | `1` | Maximum instance workers in this command; different chunks run concurrently when raised. Datasets run in order and reuse the worker pool. |
@@ -162,8 +149,7 @@ python provisioning/provision.py --isa sve2 --on-demand            # on-demand, 
 - `harness_trajs/<harness>/<author>/<dataset>_<isa>_<definition>.log` — the
   result JSON of that definition. `own`: `status` (`PASSED` with the best
   version of the session, or `NO_SUBMIT`), `time_speedup`, `cycle_speedup`
-  and the full `version_history`. `single-shot`: one row per sample plus the
-  `pass_rate`.
+  and the full `version_history`.
 - `agent-runs-<author>/<definition>/` — synced back from the instance:
   `trajectory.jsonl`, every compiled version (`v<N>.cpp`), disassembly, and
   the reference scalar kernel.
@@ -175,7 +161,6 @@ python provisioning/provision.py --isa sve2 --on-demand            # on-demand, 
 | File | Role |
 |---|---|
 | `evaluator.py` | The agent turn loop: system/user prompts, tool-call dispatch, retries, history compression, optional notepad |
-| `single_shot.py` | One completion, no tools; extracts the kernel, then compiles and measures it over MCP |
 | `mcp_client.py` | MCP client bridge to `mcp_app/server.py` — the same server the external harnesses drive |
 | `llm_call.py` | Chooses Chat Completions or the Responses API per model and normalizes the reply |
 | `llm_providers.py` | Optional per-provider `api_key` / `api_base` overrides from `llm_providers.json` |

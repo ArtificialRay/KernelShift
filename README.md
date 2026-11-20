@@ -24,7 +24,7 @@ tier and whether it runs there.
 Python 3.12 or later, and `clang++` (Apple clang works on macOS).
 
 ```bash
-git clone https://github.com/ArtificialRay/CPU-Kernel-Baseline && cd CPU-Kernel-Baseline
+git clone https://github.com/ArtificialRay/KernelShift && cd KernelShift
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 hf download arm-bench/KernelShift --repo-type dataset --local-dir bench-trace
@@ -94,10 +94,8 @@ caps the compile, evaluate and disassemble calls per kernel. `--help` lists the 
 |---|---|---|
 | Claude Code | `claude-code` | `claude` CLI, logged in |
 | Codex | `codex` | `codex` CLI, logged in |
-| Cline | `cline` | `cline` CLI, `--model`, an endpoint in `skills/cline/cline-kernel-session/config.json` |
 | nanobot | `nanobot` | `nanobot` CLI with a `~/.nanobot/workspace`, an API key in `skills/nanobot/nanobot-kernel-session/config.json` |
 | Built-in tool-call loop | `own` | `--model` (any [litellm](https://docs.litellm.ai/) model id) |
-| One completion, no tools | `single-shot` | `--model` |
 
 ### AWS setup (once)
 
@@ -143,12 +141,11 @@ highest `cycle_speedup_geomean` instead (time where there are no cycle counters,
 M4), so it can be a different version. `--wandb` also logs each run to Weights & Biases
 (fields described in [`analysis/README.md`](analysis/README.md)).
 
-On Linux, external CLI harnesses (`claude-code`, `codex`, `cline`, `nanobot`)
-run in a per-job **Bubblewrap filesystem sandbox** by default. Install `bwrap`
-on the driver host to enable Bubblewrap.
-For `nanobot` only, if Bubblewrap is enabled. nanobot CLI should not be installed in local repository environment, but in global environment
-`own` and `single-shot` run inside the driver process and default to off;
-explicit `--file-sandbox bwrap` is rejected for them.
+On Linux, the external CLI harnesses (`claude-code`, `codex`, `nanobot`) run in a
+per-job **Bubblewrap filesystem sandbox** by default; install `bwrap` on the driver
+host. With the sandbox on, install the `nanobot` CLI globally, not in the repo's
+environment. `own` runs inside the driver process, so the sandbox is off for it and
+`--file-sandbox bwrap` is rejected.
 
 ## Other ways to use it
 
@@ -163,7 +160,7 @@ explicit `--file-sandbox bwrap` is rejected for them.
 
 - [`docs/configuration.md`](docs/configuration.md): every config file, environment
   variable and the timing protocol
-- [`eval/README.md`](eval/README.md): the built-in agent loop and single-shot mode
+- [`eval/README.md`](eval/README.md): the built-in agent loop
 - [`CLAUDE.md`](CLAUDE.md): how the code is organized
 
 ## License

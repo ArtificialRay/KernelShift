@@ -29,10 +29,6 @@ mcp_app/
     server.py                  # the MCP server process itself (--transport stdio|streamable-http)
     resources.py                 # MCP Resources over a session's run_dir —
                                  #   nested one dir per definition
-    smoke_test_driver.py            # sequential, non-nanobot smoke-test/verification driver
-    scripts/                       # scripts specifically for mcp server smoke test
-        _local_ssh.py                # smoke_test_driver.py's own SSH/rsync
-        test_mcp_client.py            # plain MCP client for manual/smoke-test runs
 ```
 
 ## 2. Starting the server
@@ -65,7 +61,7 @@ that harness's MCP config:
 ```bash
 python3 skills/launch/launch_session.py launch \
     --isa <neon|sve|sve2|sme2> --dataset <ncnn|simd-loop|llama.cpp|kleidiai> \
-    --local-repo-dir <path to your local CPU-Kernel-Baseline checkout>
+    --local-repo-dir <path to your local KernelShift checkout>
 ```
 
 See `skills/README.md` for the full command surface (`provision` /

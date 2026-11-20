@@ -57,9 +57,9 @@ RSYNC_ALLOWLIST = (
     or json.loads((REPO_ROOT / "config" / "rsync_allowlist.json").read_text())["paths"]
 )
 
-# Shared with provisioning/provision.py and mcp_app/smoke_test_driver.py — lives at
-# the repo root (like contracts.py/config/kernel_contracts.yaml) so none of
-# the three packages "owns" a separately-duplicated copy that can drift.
+# Shared with provisioning/provision.py — lives at the repo root (like
+# contracts.py/config/kernel_contracts.yaml) so neither package "owns" a
+# separately-duplicated copy that can drift.
 DATASET_BUILDS: dict = json.loads((REPO_ROOT / "config" / "dataset_builds.json").read_text())
 
 
@@ -193,8 +193,7 @@ def _spawn_command(
 ) -> str:
     """Remote command for a persistent streamable-http-mode mcp_app.server
     (see prepare_session's docstring for why this is the only mode this
-    script offers — mcp_app/smoke_test_driver.py still uses stdio directly,
-    this is unrelated to that). `datasets` with more than one entry starts
+    script offers). `datasets` with more than one entry starts
     mcp_app.server's dispatcher mode (repeated --dataset flags) — see
     mcp_app/agent_tools/dispatcher.py."""
     run_dir = f"{remote_root}/agent-runs-mcp/{author}"
@@ -214,9 +213,7 @@ def _spawn_command(
 
 
 # ── Pre-flight: make sure the instance actually has what a session needs
-#    before nanobot ever connects. mcp_app/smoke_test_driver.py (mcp_app's
-#    non-nanobot smoke-test tool) has its own independent copy of this same
-#    logic, since mcp_app and skills/ never import from each other.
+#    before nanobot ever connects.
 
 def ensure_dataset_ready(target: RemoteTarget, dataset: str, *, verbose: bool = True) -> None:
     """Make sure `dataset`'s native-library build artifacts (ncnn/llama.cpp)

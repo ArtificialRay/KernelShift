@@ -11,7 +11,6 @@ first one is something you have to set up yourself.
 | `eval/llm_providers.json` | Per-provider `api_key` / `api_base` for the litellm loop; anything left out falls back to the provider's usual environment variable. | `--harness own` |
 | `skills/nanobot/nanobot-kernel-session/config.json` | nanobot's model, provider + API key, and MCP server wiring. The one exception here: it is checked in as the default, with every key empty. Fill in your provider's `apiKey`, or keep the key out of git by pointing `NANOBOT_CONFIG_BASE` at a copy. | `--harness nanobot` |
 | `skills/codex/codex-kernel-session/config.json` | Optional custom endpoint (`base_url`, `api_key`); without it codex uses the account `codex login` set up. | `--harness codex` |
-| `skills/cline/cline-kernel-session/config.json` | Custom endpoint (`base_url`, `api_key`) — required, cline has no login to fall back to. | `--harness cline` |
 
 `--harness claude-code` uses the account `claude login` set up.
 It runs every job in its own empty directory outside this repo, with
@@ -79,7 +78,7 @@ Only needed in specific cases, set in `.env` or the shell.
 | `RSYNC_ALLOWLIST` | Comma-separated repo paths to sync to instances, instead of `config/rsync_allowlist.json` |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` | `--harness claude-code`: use an API key or a custom endpoint instead of the account `claude login` set up |
 | `OPENROUTER_API_KEY` and the other litellm provider variables | `--harness own`: the key litellm uses for any provider or field that `eval/llm_providers.json` leaves out |
-| `OPENAI_API_KEY`, `OPENAI_API_BASE` (or `OPENAI_BASE_URL`) | Override the key and endpoint in the codex / cline `config.json` |
+| `OPENAI_API_KEY`, `OPENAI_API_BASE` (or `OPENAI_BASE_URL`) | Override the key and endpoint in the codex `config.json` |
 | `TF_VAR_ssh_key_files` | Per-label SSH private key as JSON, e.g. `{"ncnn-sme2": "~/.ssh/mac-m4-key.pem"}` (default `~/.ssh/id_rsa`); Terraform imports the `.pub` next to it as that label's key pair |
 
 ## Timing protocol

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from bench.config import BenchmarkConfig
     from bench.data.trace_set import TraceSet
 
-# From contracts.py — shared with bench/config.py and mcp_app/smoke_test_driver.py::DATASET_REFERENCE.
+# From contracts.py — shared with bench/config.py.
 DEFAULT_BASELINE_AUTHOR: dict[str, str] = BASELINE_AUTHORS
 
 

@@ -1,8 +1,7 @@
 """SessionConfig + build_tools() — server-side session bootstrap.
 
 Runs on the machine mcp_app/server.py is started on (the target instance).
-Single chokepoint used by both server.py and the verification script
-(mcp_app/smoke_test_driver.py).
+Single chokepoint used by server.py.
 """
 
 from __future__ import annotations

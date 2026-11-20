@@ -135,9 +135,7 @@ class _SessionThread:
 
 
 def _call_tool_result_to_dict(result: Any) -> dict:
-    """mcp.types.CallToolResult -> plain dict, preferring structuredContent
-    (a copy of mcp_app/scripts/test_mcp_client.py's `_tool_result_dict`, so
-    runtime code doesn't import a test helper)."""
+    """mcp.types.CallToolResult -> plain dict, preferring structuredContent."""
     if result.structuredContent is not None:
         return result.structuredContent
     text = "".join(getattr(c, "text", "") for c in result.content)

@@ -116,11 +116,7 @@ _ISA_PROMPT_INFO: dict[str, tuple[str, str]] = {
 
 
 def build_user_prompt(definition, ref_solution) -> str:
-    """Task description: the entry signature and the scalar kernel to replace.
-
-    eval/single_shot.py keeps a hand-synced copy with its own closing line, so
-    both paths hand the model identical task information.
-    """
+    """Task description: the entry signature and the scalar kernel to replace."""
     parts = [f"Definition: {definition.name}  (op_type: {definition.op_type})"]
 
     if ref_solution is not None:

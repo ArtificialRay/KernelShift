@@ -1,6 +1,6 @@
 # Kernel auto-optimizing via agent harness
 
-CPU-Kernel-Baseline provides skills to run its kernel auto-optimizing bench
+KernelShift provides skills to run its kernel auto-optimizing bench
 pipeline (check_progress/compile/evaluate/disassemble against `mcp_app`'s MCP
 server) through modern agent harnesses.
 
@@ -19,13 +19,12 @@ document intentionally doesn't repeat it.
 | Nanobot | [`nanobot/nanobot-kernel-session/`](nanobot/nanobot-kernel-session/) (`SKILL.md` + `README.md`) | supported |
 | Claude Code | [`claude-code/claude-code-kernel-session/`](claude-code/claude-code-kernel-session/) (`SKILL.md`) | supported |
 | Codex | [`codex/codex-kernel-session/`](codex/codex-kernel-session/) (`SKILL.md` + `config.json.example`) | supported |
-| Cline | [`cline/cline-kernel-session/`](cline/cline-kernel-session/) (`SKILL.md` + `config.json.example`) | supported |
 | Gemini CLI | — | not yet implemented |
 
 Each skill directory's `SKILL.md` is the agent-facing optimization workflow.
 Nanobot also has a `README.md`, the operator-facing guide for wiring it to a
-session by hand; read this document first, then that one. Claude Code, Codex
-and Cline need no manual wiring: `test_scripts/bench_fleet.py --harness <name>`
+session by hand; read this document first, then that one. Claude Code and
+Codex need no manual wiring: `test_scripts/bench_fleet.py --harness <name>`
 starts the session, points the harness at it and hands it the skill (see
 `test_scripts/harness_adapters/`).
 

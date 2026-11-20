@@ -1,7 +1,7 @@
 ---
 name: claude-code-kernel-session
 description: >
-  Drive a CPU-Kernel-Baseline AArch64 SIMD-kernel optimization session
+  Drive a KernelShift AArch64 SIMD-kernel optimization session
   against a provisioned Graviton instance over mcp_app's MCP server. Use
   when asked to optimize an ncnn/simd-loop/llama.cpp kernel definition.
 ---

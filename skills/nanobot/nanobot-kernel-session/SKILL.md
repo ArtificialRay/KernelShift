@@ -1,7 +1,7 @@
 ---
 name: nanobot-kernel-session
 description: >
-  Drive a CPU-Kernel-Baseline AArch64 SIMD-kernel optimization session
+  Drive a KernelShift AArch64 SIMD-kernel optimization session
   against a provisioned Graviton instance. Use when the user asks to optimize
   an ncnn/simd-loop/llama.cpp kernel definition
 metadata:

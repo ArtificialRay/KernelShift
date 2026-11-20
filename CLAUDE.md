@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-**CPU-Kernel-Baseline** evaluates LLMs on their ability to write optimized AArch64
+**KernelShift** evaluates LLMs on their ability to write optimized AArch64
 SIMD kernels for ncnn / llama.cpp / Arm SIMD Loops / KleidiAI. Three evaluation
 paths, all built on the same `bench/` harness, the same `bench-trace/` warehouse,
 and — as of the eval/mcp_client.py migration — the same `mcp_app/server.py` tool
@@ -193,10 +193,9 @@ bench/                          # Local harness Python package
     registry.py                 # resolve_evaluator() — first-match dispatch
   runner.py                     # compile-once → BoundKernel → evaluator per workload
   benchmark.py                  # Benchmark orchestration (build lifecycle, candidate-vs-baseline)
-  cli.py                        # Offline-evaluation entry point: bench, bench-author, retime, collect-baselines,
+  cli.py                        # Offline-evaluation entry point: bench, bench-author, collect-baselines,
                                 #   summary, list-definitions, list-solutions
   autovec.py                    # autovec_build: a dataset's scalar starting point compiled exactly like an agent candidate
-  retime.py                     # retime(): re-time stored solutions against fresh baselines in an isolated root
   config.py                     # BenchmarkConfig + EvalConfig (tolerances, source patterns)
   data/
     definition.py               # Definition + SimdLoopMeta + DType (incl. unsigned)
@@ -268,7 +267,7 @@ test_scripts/                   # Batch-fleet entry point, shared across all thr
   bench_fleet.py                 # `--harness {claude-code,nanobot,own}` — compute author/label
                                  #   once, provision, prepare_session, retry/log/sync loop over
                                  #   every definition matching --dataset
-  harness_adapters/             # One module per harness: HarnessAdapter (ClaudeCodeAdapter/NanobotAdapter/
+  harness_adapters/             # One module per harness: HarnessAdapter (ClaudeCodeAdapter/CodexAdapter/NanobotAdapter/
                                  #   OwnHarnessAdapter) — what's genuinely harness-specific: how
                                  #   each is invoked, how it connects to the MCP endpoint
 
@@ -276,9 +275,6 @@ plugins/                        # Archived kgen discover plugins that generated 
   simd_loop/plugin.py           # simd-loop harnesses + bench-trace artifacts (needs dataset/problems, loops/, clang)
   llamacpp/plugin.py            # packed-ggml gemm definitions/workloads/solutions from an inventory JSON
 
-scripts/retime/                 # extract_run_solutions.py / fetch_wandb_runs.py: stored agent kernels for `bench.cli retime`
-
-case-study/                     # Per-definition optimization write-ups
 terraform/                      # Graviton EC2 Terraform config
 config/kernel_contracts.yaml    # Single source of truth: ISA mappings, evaluator defaults,
                                 #   baseline/reference-scalar authors per dataset
@@ -320,12 +316,6 @@ python -m bench.cli bench-author --author reference-scalar --dataset ncnn
 
 # baselines for one dataset / definition (there is no default dataset any more)
 python -m bench.cli collect-baselines --dataset simd-loop --isa sve
-
-# re-time agent kernels under the current timing protocol, in an isolated root with freshly collected baselines;
-# --author or --index (extracted.json of scripts/retime/extract_run_solutions.py) picks the solutions, and
-# --extra-authors autovec adds the scalar starting point compiled like an agent candidate (any dataset)
-python -m bench.cli retime --dataset simd-loop --isa sve --author retime__<cell> \
-  --extra-authors autovec --pass-id a1 --out retime-a1.jsonl
 ```
 
 ### Correctness smoke-test
@@ -353,13 +343,6 @@ python3 launch_session.py launch --isa sve --dataset ncnn
 ### Regenerate definitions/workloads
 ```bash
 python -m kgen discover plugins/simd_loop/plugin.py -- --out-dir /tmp/stage   # then kgen add each file; see plugins/README.md
-```
-
-### Sync local code to remote instance
-```bash
-./sync_remote.sh                              # rsync the repo
-./sync_remote.sh --mirror                     # force mirror (rm remote, then copy)
-HOST=1.2.3.4 ./sync_remote.sh                 # different instance
 ```
 
 ---
