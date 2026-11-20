@@ -30,7 +30,7 @@ end-to-end definitions are used to splice agent kernels into llama.cpp
 Python 3.12 or later, and `clang++` (Apple clang works on macOS).
 
 ```bash
-git clone https://github.com/ArtificialRay/KernelShift && cd KernelShift
+git clone https://github.com/cmu-l3/kernel-shift && cd kernel-shift
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 hf download arm-bench/KernelShift --repo-type dataset --local-dir bench-trace
@@ -174,4 +174,7 @@ environment. `own` runs inside the driver process, so the sandbox is off for it 
 
 ## License
 
-See [`LICENSE.md`](LICENSE.md).
+Copyright 2026 The KernelShift Authors. Licensed under the
+[Apache License 2.0](LICENSE). `loops/` (Arm SIMD Loops) and `dataset/problems/`, which is
+generated from it, are under Arm's BSD 3-Clause License
+([`loops/common/LICENSE.md`](loops/common/LICENSE.md)); see [`NOTICE`](NOTICE).
