@@ -1,5 +1,7 @@
 # KernelShift
 
+Project website: <https://cmu-l3.github.io/kernel-shift/>
+
 ![KernelShift overview](docs/figures/overview.png)
 
 A benchmark environment for LLM agents that write optimized AArch64 SIMD kernels (NEON, SVE,
