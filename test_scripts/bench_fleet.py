@@ -132,7 +132,7 @@ def ensure_baselines(
     # Every tier's uv-managed venv (provisioning/provision.py::_venv_steps) —
     # same path as provisioning/remote.py::InstanceHandle.python, which
     # RemoteTarget can't expose directly (skills/launch/remote.py carries no
-    # instance_type, and none is needed any more).
+    # instance_type).
     python = "~/venv/bin/python3"
 
     print(f"[sync] Syncing benchmark inputs to {target.host} before baseline collection...")
@@ -533,7 +533,7 @@ def _run_chunk_subprocess(
         # This is a single-pass invocation of this same script (see this
         # function's own docstring) — without this flag it would hit
         # main()'s unconditional post-run teardown and destroy every
-        # instance 
+        # instance
         "--skip-final-teardown",
     ]
     if args.model:

@@ -45,8 +45,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-import numpy as np
-
 from bench.data import Definition
 
 from .axes import input_shape, resolve_axes

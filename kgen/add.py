@@ -27,9 +27,9 @@ def load_json(path: Path):
     try:
         return json.loads(Path(path).read_text())
     except OSError as e:
-        raise AddError([f"{path}: cannot read ({e.strerror})"])
+        raise AddError([f"{path}: cannot read ({e.strerror})"]) from e
     except json.JSONDecodeError as e:
-        raise AddError([f"{path}: not valid JSON ({e})"])
+        raise AddError([f"{path}: not valid JSON ({e})"]) from e
 
 
 def find_definition(root: Path, name: str) -> Definition | None:
@@ -117,11 +117,11 @@ def add_workload(file: Path, definition_name: str, root: Path, replace: bool = F
     try:
         lines = Path(file).read_text().splitlines()
     except OSError as e:
-        raise AddError([f"{file}: cannot read ({e.strerror})"])
+        raise AddError([f"{file}: cannot read ({e.strerror})"]) from e
     try:
         parsed = [json.loads(l) for l in lines if l.strip()]
     except json.JSONDecodeError as e:
-        raise AddError([f"{file}: not valid JSON ({e})"])
+        raise AddError([f"{file}: not valid JSON ({e})"]) from e
     if not all(isinstance(r, dict) for r in parsed):
         raise AddError([f"{file}: every line must be a JSON object"])
     existing = read_rows(target)

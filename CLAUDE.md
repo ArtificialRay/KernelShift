@@ -26,10 +26,7 @@ execution surface for every agent-driven path:
   `test_scripts/bench_fleet.py --harness own` — the same batch-fleet entry
   point Path 3's harnesses use (`OwnHarnessAdapter` in
   `test_scripts/harness_adapters/own.py` calls `run_agentic_eval` in-process,
-  no external CLI subprocess). (Previously had its own independent
-  SSH-based tool system, `eval/agent_tools/`, then its own standalone CLI,
-  `eval/run_benchmark.py` — both retired once bench_fleet.py covered the
-  same ground; see `eval/mcp_client.py`'s module docstring.)
+  no external CLI subprocess).
 - **Path 2 — Local `bench/` harness**: compiles solutions into `.so` files with
   clang++ locally, dlopens them, runs correctness + timing without SSH or any
   agent loop. Works on any machine; produces real SVE2 numbers on Graviton.

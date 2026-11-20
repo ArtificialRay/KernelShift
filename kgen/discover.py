@@ -37,5 +37,5 @@ def run_plugin(plugin: Path, argv: list[str]) -> dict:
     try:
         json.dumps(result)
     except TypeError as e:
-        raise KgenError(f"{plugin}: the dict discover() returned is not JSON-serializable ({e})")
+        raise KgenError(f"{plugin}: the dict discover() returned is not JSON-serializable ({e})") from e
     return result

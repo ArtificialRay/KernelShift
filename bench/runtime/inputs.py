@@ -67,10 +67,9 @@ def _gen_ggml_kquant_rows(shape: tuple, layout: str, rng: np.random.Generator) -
     sub-block min is about 2.7 sigma of the weight distribution while one quant step
     is about 0.36 sigma, so `dmin` runs ~8x `d` and the 6-bit mins sit near 46/63 --
     the min-correction term carries far more of the weight value than the scaled
-    quants do. Under the old uniform draw `dmin/d` was 1.0 and mins averaged 37, which
-    made the min term a minor correction and hid any kernel that mishandled it. The
-    2026-09-21 Fable kernels did mishandle it (int8 block sums under a batch-shared
-    exponent) and the harness could not see it; see e2e/README.md.
+    quants do. Under a uniform draw `dmin/d` is 1.0 and mins average 37, which makes
+    the min term a minor correction and hides any kernel that mishandles it (for
+    example int8 block sums under a batch-shared exponent); see e2e/README.md.
 
     Quantizing real weights reproduces the true relationship for free: per 32-element
     sub-block take min/max, step = (max-min)/levels, and let the repack helpers do

@@ -311,7 +311,7 @@ def run_agentic_eval(
     )
     user_msg = build_user_prompt(definition, ref_solution)
     # max_turns is already a hard ceiling, so there's no budget risk in
-    # always nudging against early stopping 
+    # always nudging against early stopping
     user_msg += ("\n\nIMPORTANT: Try multiple genuinely different implementations — "
                  "not just small tweaks of your previous version — and keep iterating "
                  "as long as you can still beat your best measured time_speedup.")

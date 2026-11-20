@@ -806,9 +806,8 @@ _SVE_TIERS = {
 
 
 # The sve2 tier is generated only with --emit-sve2. What ships in bench-trace as
-# baseline-simd-loop-sve2 is the Graviton4-validated set from 2026-07-23 (the files that
-# were the SVE baseline until 2026-09-11, with author/name renamed and
-# -march=native restored) — frozen so nobody's sve2 numbers move. The
+# baseline-simd-loop-sve2 is a frozen, Graviton4-validated set (built with
+# -march=native), so sve2 numbers do not move. The
 # generator's own sve2 output (new extractor, cross-compiled, never run on a
 # c8g) is a candidate replacement to audit first.
 _EMIT_SVE2 = False   # set from discover()'s arguments
@@ -1534,7 +1533,7 @@ def _write_sve_solution(lid: str, base_sources: list) -> None:
     the loop is skipped or has no SVE block."""
     for tier, spec in _SVE_TIERS.items():
         if tier == "sve2" and not _EMIT_SVE2:
-            continue  # bench-trace's baseline-simd-loop-sve2 is the frozen 2026-07-23 set (see _EMIT_SVE2)
+            continue  # bench-trace's baseline-simd-loop-sve2 is the frozen set (see _EMIT_SVE2)
         if tier == "sme2" and not _EMIT_SME2:
             continue
         if lid in spec["skip"]:

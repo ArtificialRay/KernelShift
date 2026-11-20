@@ -82,7 +82,7 @@ def _dataset_label_part(dataset) -> str:
     return dataset or ""
 
 
-# label = f"{dataset(s)}-{author}" — `author` 
+# label = f"{dataset(s)}-{author}" — `author`
 def _label_for(dataset, author: str) -> str:
     raw = f"{_dataset_label_part(dataset)}-{author}"
     return re.sub(r"[^a-z0-9.-]", "-", raw.lower()).strip("-.")
@@ -301,7 +301,7 @@ def prepare_session(
         ensure_dataset_ready(target, ds)
 
     # A previous session on this instance may not have torn down cleanly
-    # (Ctrl+C interrupted mid-cleanup, kill -9, a hard crash), before start a new server, 
+    # (Ctrl+C interrupted mid-cleanup, kill -9, a hard crash), before start a new server,
     # gracefully stop current server session at remote instance
     _graceful_stop_remote_server(target, remote_port)
 
@@ -319,11 +319,11 @@ def prepare_session(
         _wait_for_port(local_port, timeout=startup_timeout, proc=proc)
     except BaseException:
         # Any exception will kill the listening local port, including ctrl+C
-        print(f"[launch_session] kill listening local port...")
+        print("[launch_session] kill listening local port...")
         proc.kill()
         proc.wait()
         _kill_remote_port(target, remote_port)
-        print(f"[launch_session] listening local port successfully killed")
+        print("[launch_session] listening local port successfully killed")
         raise
     return {
         "transport": "streamable-http", "endpoint": endpoint, "_tunnel_proc": proc,

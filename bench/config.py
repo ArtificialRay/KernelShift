@@ -87,8 +87,8 @@ class BenchmarkConfig:
     carries a `baseline_sqnr_db` tag (written by kgen/calibrate.py).
     A fixed absolute floor is the wrong gate for a quantized kernel: ggml's own q4_K
     arithmetic sits near 44 dB on real activations, so a 20 dB floor accepts a kernel
-    that throws away 24 dB of signal the reference keeps. The 2026-09-21 Fable kernels
-    did exactly that and cost 3.9 perplexity end to end."""
+    that throws away 24 dB of signal the reference keeps. An agent kernel that did
+    exactly that cost 3.9 perplexity end to end."""
     op_type_config: Dict[str, EvalOverride] = field(
         default_factory=lambda: dict(DEFAULT_OP_TYPE_CONFIG)
     )

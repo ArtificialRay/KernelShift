@@ -139,7 +139,7 @@ A kernel's result is the highest `time_speedup_geomean` among its passing evalua
 version saved as its solution (the trajectory's last `submit` turn) is the one with the
 highest `cycle_speedup_geomean` instead (time where there are no cycle counters, as on the
 M4), so it can be a different version. `--wandb` also logs each run to Weights & Biases
-(fields described in [`analysis/README.md`](analysis/README.md)).
+(`pip install wandb` first; fields described in [`analysis/README.md`](analysis/README.md)).
 
 On Linux, the external CLI harnesses (`claude-code`, `codex`, `nanobot`) run in a
 per-job **Bubblewrap filesystem sandbox** by default; install `bwrap` on the driver

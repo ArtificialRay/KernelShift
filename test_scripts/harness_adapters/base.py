@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from quota_errors import QUOTA_EXIT_CODE, log_has_hard_quota_error
+from quota_errors import QUOTA_EXIT_CODE, log_has_hard_quota_error  # noqa: F401  (QUOTA_EXIT_CODE is re-exported)
 
 from .sandbox import FileSandbox, sandboxed_command
 

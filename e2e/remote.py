@@ -10,7 +10,6 @@ import shlex
 import subprocess
 import time
 from dataclasses import fields
-from pathlib import Path
 
 from .context import REPO, E2EContext, Options
 from .errors import StepFailed
@@ -50,7 +49,7 @@ def run_on_box(box, ctx: E2EContext, opts: Options, steps: list[str]) -> int:
     try:
         box.rsync_to(str(REPO), BOX_REPO, paths=RSYNC_ALLOWLIST)
     except subprocess.CalledProcessError as e:
-        raise StepFailed(f"rsync to the box failed: {(e.stderr or b'').decode()[-300:]}")
+        raise StepFailed(f"rsync to the box failed: {(e.stderr or b'').decode()[-300:]}") from e
 
     command = f"cd {BOX_REPO} && {box.python} -m e2e evaluate " + " ".join(map(shlex.quote, box_args(ctx, opts, steps)))
     # only the setsid command is backgrounded (`a && b &` would background the whole list, which keeps ssh's
@@ -62,8 +61,8 @@ def run_on_box(box, ctx: E2EContext, opts: Options, steps: list[str]) -> int:
     try:
         code = follow(box, run)
     except KeyboardInterrupt:
-        print(f"\n[e2e] stopped waiting; the run continues on the box. Pull its results with the same "
-              f"command plus --fetch.")
+        print("\n[e2e] stopped waiting; the run continues on the box. Pull its results with the same "
+              "command plus --fetch.")
         return 130
     fetch(box, ctx)
     return code
