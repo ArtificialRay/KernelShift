@@ -561,9 +561,8 @@ def main(argv: list[str] | None = None) -> None:
                        help="Override only — the server auto-derives this from --dataset.")
     prep.add_argument("--isa", required=True, choices=["neon", "sve", "sve2", "sme2"])
     prep.add_argument("--local-port", type=int, default=8888,
-                       help="Fix the local tunnel port instead of picking a random free "
-                            "one each run, so a reused mcp client config (e.g. nanobot's) "
-                            "doesn't need editing every relaunch.")
+                       help="Local end of the SSH tunnel (default 8888). Fixed, so a reused mcp "
+                            "client config (e.g. nanobot's) doesn't need editing every relaunch.")
     prep.add_argument("--remote-port", type=int, default=8765,
                        help="Port mcp_app.server binds to on the remote instance. Override "
                             "when reusing the same instance (same --isa) for more than one "
@@ -652,9 +651,8 @@ def main(argv: list[str] | None = None) -> None:
                          help="Override only — the server auto-derives this from --dataset.")
     launch.add_argument("--remote-root", default="~/kernelshift")
     launch.add_argument("--local-port", type=int, default=8888,
-                         help="Fix the local tunnel port instead of picking a random free "
-                              "one each run, so a reused mcp client config (e.g. nanobot's) "
-                              "doesn't need editing every relaunch.")
+                         help="Local end of the SSH tunnel (default 8888). Fixed, so a reused mcp "
+                              "client config (e.g. nanobot's) doesn't need editing every relaunch.")
     launch.add_argument("--remote-port", type=int, default=8765,
                          help="Port mcp_app.server binds to on the remote instance. Override "
                               "when reusing the same instance (same --isa) for more than one "
