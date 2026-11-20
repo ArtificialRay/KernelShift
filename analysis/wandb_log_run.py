@@ -19,6 +19,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))   # repo root, for contracts
+from contracts import baseline_author_for  # noqa: E402
+
 # SIMD / optimization idioms we detect in the agent's kernels (what did it do?).
 TECHNIQUES = {
     "bf16_bfdot": r"\bsvbfdot",
@@ -128,22 +131,21 @@ def detect_techniques(text: str):
     return sorted(k for k, pat in TECHNIQUES.items() if re.search(pat, text))
 
 
-def baseline_hash(dataset: str, name: str):
+def baseline_hash(dataset: str, isa: str, name: str):
     """Content hash of the local baseline kernel this run was (nominally) scored
     against — so runs are comparable across baseline changes. Best-effort."""
-    auth = {"llama.cpp": "baseline-llamacpp", "ncnn": "baseline-ncnn",
-            "simd-loop": "reference-scalar"}.get(dataset)
-    if not auth:
-        return None
-    hits = glob.glob(f"bench-trace/solutions/{dataset}/{auth}/*/{name}.json")
-    if not hits:
-        return None
+    auth = baseline_author_for(dataset, isa)
     try:
-        srcs = json.load(open(hits[0])).get("sources", [])
-        k = next((s["content"] for s in srcs if s["path"] == "kernel.cpp"), "")
-        return hashlib.sha256(k.encode()).hexdigest()[:12] if k else None
+        for p in glob.glob(f"bench-trace/solutions/{dataset}/{auth}/**/*.json", recursive=True):
+            sol = json.load(open(p))
+            if sol.get("definition") == name:
+                h = hashlib.sha256()
+                for src in sorted(sol.get("sources", []), key=lambda src: src["path"]):
+                    h.update(src["path"].encode() + b"\0" + src["content"].encode())
+                return h.hexdigest()[:12]
     except Exception:
-        return None
+        pass
+    return None
 
 
 def find_best_kernel(traj: Path, ver_best: dict):
@@ -193,7 +195,7 @@ def log_run_to_wandb(
             "definition": name, "dataset": dataset, "op_type": op_type,
             "isa": isa, "model": model, "author": author, "harness": harness,
             "instance_type": os.environ.get("WANDB_INSTANCE_TYPE", "unknown"),
-            "baseline_kernel_sha": baseline_hash(dataset, name),
+            "baseline_kernel_sha": baseline_hash(dataset, isa, name),
         },
     )
 

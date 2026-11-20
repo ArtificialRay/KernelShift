@@ -61,7 +61,7 @@ trajectory (not just perf-mode ones), so it's accurate regardless of harness.
 |---|---|
 | `definition` / `dataset` / `op_type` / `isa` / `model` / `author` / `harness` | run identity |
 | `instance_type` | `WANDB_INSTANCE_TYPE` env var, if set |
-| `baseline_kernel_sha` | first 12 hex chars of the sha256 of the baseline `kernel.cpp` this run was scored against — lets you tell runs apart across baseline changes |
+| `baseline_kernel_sha` | first 12 hex chars of the sha256 of every source file of the dataset's baseline solution for this ISA, read from the local `bench-trace/` — lets you tell runs apart across baseline changes |
 
 ### Table / Artifact (from trajectory + kernel sources, all harnesses)
 
