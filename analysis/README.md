@@ -1,15 +1,11 @@
 # analysis/
 
-W&B logging for `test_scripts/bench_fleet.py`, plus standalone SIMD baseline
-diagnostics. This README documents what `wandb_log_run.py` writes to Weights &
+W&B logging for `test_scripts/bench_fleet.py`. This README documents what `wandb_log_run.py` writes to Weights &
 Biases and where to find it on the run page.
 
 - `wandb_log_run.py` — per-definition W&B logging, imported directly by
   `bench_fleet.py` (`log_run_to_wandb()`). Not a CLI/subprocess in the
   production path; its `__main__` is a thin manual-backfill entry point only.
-- `audit_simd_baselines.py` — run on an Arm instance to check SVE baseline
-  solutions against the reference workloads.
-- `sme_qemu_check.py` — check SME2 baseline correctness under QEMU.
 
 ## What ends up on the W&B run page, and where
 

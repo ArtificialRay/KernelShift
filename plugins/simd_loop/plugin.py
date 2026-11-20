@@ -737,8 +737,8 @@ _CPP_STUB_HEADERS = [
 #   asm_fallback: loops whose HAVE_SVE_INTRINSICS (ACLE) branch needs SVE2 but
 #     which carry a plain-SVE inline-asm branch upstream (`#elif
 #     defined(__ARM_FEATURE_SVE)`) — Arm-authored too, and what upstream `make`
-#     builds on a Graviton3. Cross-compile-checked 2026-09-11, runtime-audited
-#     on a c7g.large with analysis/audit_simd_baselines.py.
+#     builds on a Graviton3. Cross-compile-checked and runtime-audited
+#     on a c7g.large.
 #   skip: no usable kernel at that tier (SVE2-only upstream with only a
 #     scalar/NEON alternative; multi-axis ABI mismatch; unresolved), so no
 #     broken baseline is ever emitted.
@@ -763,8 +763,8 @@ _SVE_TIERS = {
     # SME: Arm's HAVE_SME_INTRINSICS build, for Apple M4 (contracts.ISA_TABLE
     # "sme2": -mcpu=apple-m4, where SVE runs only in streaming mode). For most
     # loops that is the SVE kernel run in streaming mode; the 2xx matrix loops
-    # have real ZA-tile kernels. Emitted only with --emit-sme2; correctness is
-    # checked under QEMU with analysis/sme_qemu_check.py.
+    # have real ZA-tile kernels. Emitted only with --emit-sme2; correctness was
+    # checked under QEMU.
     "sme2": {
         "author": "baseline-simd-loop-sme2",
         "isa_features": ["sme2"],
