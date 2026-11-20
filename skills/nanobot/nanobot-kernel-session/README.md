@@ -13,7 +13,7 @@ nanobot loads skills from `<workspace>/skills/<name>/SKILL.md`
 **`test_scripts/bench_fleet.py --harness nanobot` does this for you:**
 `NanobotAdapter.prepare_workspace()` copies this `SKILL.md` into every job
 workspace's `skills/nanobot-kernel-session/`. That matters because nanobot
-falls back to a builtin copy of this skill (in the nanobot package) when the
+falls back to a built-in copy of this skill (in the nanobot package) when the
 workspace has none, and that copy goes stale.
 
 Only for direct `nanobot agent` runs outside `bench_fleet.py`, symlink this
@@ -41,7 +41,7 @@ SSH-tunneled `http://127.0.0.1:<port>/mcp` URL — the tunnel is managed by
 {
   "tools": {
     "mcpServers": {
-      "cpu-kernel-baseline": {
+      "NCNNKernelBench": {
         "type": "streamableHttp",
         "url": "http://127.0.0.1:<port>/mcp",
         "toolTimeout": 1500

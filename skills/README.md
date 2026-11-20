@@ -16,13 +16,13 @@ document intentionally doesn't repeat it.
 
 | harness | skill | status |
 |---|---|---|
-| Nanobot | [`nanobot/nanobot-kernel-session/`](nanobot/nanobot-kernel-session/) (`SKILL.md` + `README.md`) | supported |
+| nanobot | [`nanobot/nanobot-kernel-session/`](nanobot/nanobot-kernel-session/) (`SKILL.md` + `README.md`) | supported |
 | Claude Code | [`claude-code/claude-code-kernel-session/`](claude-code/claude-code-kernel-session/) (`SKILL.md`) | supported |
 | Codex | [`codex/codex-kernel-session/`](codex/codex-kernel-session/) (`SKILL.md` + `config.json.example`) | supported |
 | Gemini CLI | — | not yet implemented |
 
 Each skill directory's `SKILL.md` is the agent-facing optimization workflow.
-Nanobot also has a `README.md`, the operator-facing guide for wiring it to a
+nanobot also has a `README.md`, the operator-facing guide for wiring it to a
 session by hand; read this document first, then that one. Claude Code and
 Codex need no manual wiring: `test_scripts/bench_fleet.py --harness <name>`
 starts the session, points the harness at it and hands it the skill (see
@@ -48,7 +48,7 @@ python3 launch_session.py launch \
     --isa <neon|sve|sve2|sme2> --dataset <ncnn|simd-loop|llama.cpp|kleidiai>
 ```
 
-This reuses an already-up instance for that `isa` tier if `launch/`
+This reuses an already-up instance for that `--label` if `launch/`
 provisioned one earlier and it's still reachable, otherwise provisions a
 fresh one (Terraform apply, wait for SSH, rsync the repo, install build
 deps, build the dataset's native lib if needed) — then starts a persistent
@@ -142,7 +142,7 @@ python3 launch_session.py sync-results \
 | `--user` | no | `ubuntu` | |
 | `--key-file` | no | `~/.ssh/id_rsa` | |
 | `--remote-root` | no | `~/kernelshift` | where the repo lives on the instance |
-| `--author` | **yes** | — | must match the `--author` the session was actually launched with. No default here —  guessing a static default would silently sync from the wrong directory |
+| `--author` | **yes** | — | must match the `--author` the session was actually launched with. No default here — guessing a static default would silently sync from the wrong directory |
 | `--definition` | no | — (pulls everything this author touched) | sync only this definition's subdirectory |
 | `--local-results-dir` | yes | — | where to pull results down to |
 | `--sync-bench-trace` | flag | off | also pull `bench-trace/solutions/` and `bench-trace/traces/` back from the instance (merged, nothing deleted locally) |

@@ -1,5 +1,7 @@
 # KernelShift
 
+![KernelShift overview](docs/figures/overview.png)
+
 A benchmark environment for LLM agents that write optimized AArch64 SIMD kernels (NEON, SVE,
 SVE2, SME2). Each task is a kernel with a reference implementation, workloads
 taken from real models, and an expert implementation to beat. The agent compiles,
@@ -7,17 +9,21 @@ tests and profiles its kernel on the target machine through MCP tools. A kernel
 scores only if it is correct on every workload, and its score is the speedup over the
 expert implementation.
 
-| Source | Kernels | Definitions |
-|---|---|---|
-| [ncnn](https://github.com/Tencent/ncnn) | Conv2D, depthwise Conv2D, pooling (FP32, INT8) | 23 |
-| [llama.cpp](https://github.com/ggml-org/llama.cpp) | GEMM (FP32 to 4-bit), RMSNorm, attention, MoE | 44 |
-| [Arm SIMD Loops](https://gitlab.arm.com/architecture/simd-loops) | standalone loops `loop_001` … `loop_223` | 47 |
-| [KleidiAI](https://gitlab.arm.com/kleidi/kleidiai) | GEMM and convolution micro-kernels | 10 |
+| Source | Kernels | Definitions | Evaluation set |
+|---|---|--:|--:|
+| [ncnn](https://github.com/Tencent/ncnn) | Conv2D, depthwise Conv2D, pooling | 23 | 23 |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) | GEMM, MoE, attention (MHA, GQA, MLA), RMSNorm | 26 | 26 |
+| [Arm SIMD Loops](https://gitlab.arm.com/architecture/simd-loops) | standalone loops `loop_001` … `loop_223` | 47 | 24 |
+| [KleidiAI](https://gitlab.arm.com/kleidi/kleidiai) | GEMM, convolution and softmax micro-kernels | 30 | 6 SVE + 20 SME2 |
+| End-to-end (llama.cpp) | quantized GEMMs of Qwen3.5-4B and Llama-3.1-8B-Instruct | 18 | – |
+| **Total** | | **144** | **99** |
 
 The tasks live in the Hugging Face dataset
 [`arm-bench/KernelShift`](https://huggingface.co/datasets/arm-bench/KernelShift).
-Its `TASKS.md` lists, for every definition, the expert baseline on each hardware
-tier and whether it runs there.
+Its `expected_sets.json` lists the evaluation set, and its `TASKS.md` lists, for every
+definition, the expert baseline on each hardware tier and whether it runs there. The
+end-to-end definitions are used to splice agent kernels into llama.cpp
+([`e2e/README.md`](e2e/README.md)).
 
 ## Install
 
@@ -35,9 +41,9 @@ Every tool reads the dataset from `bench-trace/`. Check that it loaded:
 ```console
 $ python -m bench.cli summary
 {
-  "definitions": 124,
-  "solutions": 417,
-  "workloads": 1705,
+  "definitions": 144,
+  "solutions": 403,
+  "workloads": 1968,
   ...
 ```
 
@@ -60,13 +66,16 @@ kernel run on a Mac fails with `RUNTIME_ERROR ... SIGILL`.
 
 ## Add your kernel
 
-A kernel optimization task splits four artifacts in `bench-trace/`: 
-- **Definition** : shapes, dtypes and a Python reference
-- **Workloads** :concrete sizes and how to generate the inputs
-- **Reference-scalar solution** : plain C++, the agent's starting point 
-- **baseline solution** : the library's own kernel that agent need to beat. 
+A task is four artifacts in `bench-trace/`:
 
-To discover, build, and check one kernel, KernelShift provides `kgen`: a CLI toolkit that enable agent to automatically adding new kernel based on your need. All you need is to use any coding agent and ask it to follow `gen-*` skills in [`.claude/skills/`](.claude/skills/) which drive these CLI commands.
+- **Definition**: shapes, dtypes and a Python reference;
+- **Workloads**: concrete sizes and how to generate the inputs;
+- **Reference-scalar solution**: plain C++, the agent's starting point;
+- **Baseline solution**: the library's own kernel, which the agent has to beat.
+
+`kgen` is the CLI that discovers, builds and checks these artifacts for a new kernel.
+The easiest way to use it is to ask a coding agent to follow the `gen-*` skills in
+[`.claude/skills/`](.claude/skills/), which drive the `kgen` commands.
 
 Every command, the loader and plugin contracts and the checks: [`kgen/README.md`](kgen/README.md).
 

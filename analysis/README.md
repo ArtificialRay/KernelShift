@@ -20,7 +20,8 @@ harness drove the session).
 
 ### Charts — per-evaluate curve (from trajectory, all harnesses)
 
-One point per perf-eval call, x-axis = `iteration`.
+One point per perf-eval call, logged at its tool-call index (`step`); `iteration`
+numbers the perf-eval calls.
 
 | field | meaning |
 |---|---|

@@ -14,7 +14,7 @@ A kernel consists of four standard files across three main categories:
 | **Workloads** | Specifies concrete var-axis values and input generation rules | `bench-trace/workloads/<op_type>/<name>.jsonl` |
 | **Solutions** | Houses the reference-scalar starting point and the library baseline | `bench-trace/solutions/<dataset>/<author>/<op_type>/<name>.json` |
 
-*(Note: SIMD-loop definitions share one directory and nest solutions one level deeper.)*
+*(Note: simd-loop definitions share one directory and nest solutions one level deeper.)*
 
 ### Core Design Principles
 
@@ -54,7 +54,6 @@ Each line in a `.jsonl` workload file follows this format:
 
 ```json
 {"axes": {...}, "inputs": {...}, "tags": {...}}
-
 ```
 
 * `axes`: Must strictly match the variable axes declared in the definition.
@@ -64,11 +63,10 @@ Each line in a `.jsonl` workload file follows this format:
 **Selecting from a Pool:**
 
 ```bash
-python -m kgen add workload --max-count N --batch-key AXIS [--max-dups 2]
-
+python -m kgen add workload POOL.jsonl --definition NAME --max-count N [--batch-key AXIS] [--max-dups 2]
 ```
 
-Filters candidates from a pool (lines containing `{"axes": {...}}`) by picking $N$ rows using farthest-point diversity along the specified batch axis. Missing inputs inherit from the definition's existing workloads.
+Filters candidates from a pool (lines containing `{"axes": {...}}`) by picking `N` rows using farthest-point diversity along the batch axis (default: the first axis). Missing inputs inherit from the definition's existing workloads.
 
 ---
 
@@ -107,23 +105,16 @@ def adapters():
             slice_axis="M"
         )
     ]
-
 ```
 
 * **`collect pytorch`**: Sweeps model layers and writes unique observed shape configurations to a pool (`DIR/<definition>.jsonl`).
-```bash
-python -m kgen collect pytorch --loader load.py (--definitions D... | --tag T) --out-dir DIR
-
-```
-
-
+  ```bash
+  python -m kgen collect pytorch --loader load.py (--definitions D... | --tag T) --out-dir DIR
+  ```
 * **`capture pytorch`**: Saves actual tensor activations as `.npy` files and updates workloads with `tensor` inputs tagged `inputs: real-activations`.
-```bash
-python -m kgen capture pytorch --loader load.py --source TEXT (--definitions D... | --tag T)
-
-```
-
-
+  ```bash
+  python -m kgen capture pytorch --loader load.py --source TEXT (--definitions D... | --tag T)
+  ```
 
 ---
 
@@ -153,7 +144,6 @@ Imports and executes a custom Python script defining `discover(argv) -> dict` to
 
 ```bash
 python -m kgen discover PLUGIN [--out output.json] [-- plugin_args...]
-
 ```
 
 ---
@@ -162,7 +152,7 @@ python -m kgen discover PLUGIN [--out output.json] [-- plugin_args...]
 
 * `plugins/`: Archived discovery plugins used to extract SIMD loops and llama.cpp GEMM metadata.
 * `.claude/skills/`: Agent workflows for generating definitions, workloads, and solutions:
-* `gen-definition`
-* `gen-workload`
-* `gen-candidate-solution`
-* `gen-baseline-solution`
+  * `gen-definition`
+  * `gen-workload`
+  * `gen-candidate-solution`
+  * `gen-baseline-solution`

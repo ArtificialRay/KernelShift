@@ -10,7 +10,7 @@ first one is something you have to set up yourself.
 | `provisioning/workspaces.json` | **Exactly one** entry: the Terraform workspace this checkout uses. The key is the workspace name (selected automatically — do **not** set `TF_WORKSPACE`). Fields: `account_id` (AWS account guard), `namespace` (suffix for AWS resource names), `aws_profile`, `aws_region`, `security_group_id` (an *existing* security group that allows SSH — Terraform does not create it). This is the single source for AWS account/region/profile: don't repeat any of it in `.env`. | any provisioning / remote run |
 | `eval/llm_providers.json` | Per-provider `api_key` / `api_base` for the litellm loop; anything left out falls back to the provider's usual environment variable. | `--harness own` |
 | `skills/nanobot/nanobot-kernel-session/config.json` | nanobot's model, provider + API key, and MCP server wiring. The one exception here: it is checked in as the default, with every key empty. Fill in your provider's `apiKey`, or keep the key out of git by pointing `NANOBOT_CONFIG_BASE` at a copy. | `--harness nanobot` |
-| `skills/codex/codex-kernel-session/config.json` | Optional custom endpoint (`base_url`, `api_key`); without it codex uses the account `codex login` set up. | `--harness codex` |
+| `skills/codex/codex-kernel-session/config.json` | Optional custom endpoint (`base_url`, `api_key`); without it Codex uses the account `codex login` set up. | `--harness codex` |
 
 `--harness claude-code` uses the account `claude login` set up.
 It runs every job in its own empty directory outside this repo, with
@@ -74,11 +74,11 @@ Only needed in specific cases, set in `.env` or the shell.
 | `ARMBENCH_NOTEPAD=1` | Give the `own` harness's agent a persistent scratchpad tool |
 | `ARMBENCH_CC_JOB_ROOT` | Parent of the per-job working directories `--harness claude-code` creates (default: the system temp dir); must be outside this repo |
 | `WANDB_INSTANCE_TYPE` | Label recorded on runs logged with `--wandb` |
-| `NANOBOT_CONFIG_BASE` | set your own nanobot config address if `--harness nanobot` |
+| `NANOBOT_CONFIG_BASE` | Path of the nanobot config `--harness nanobot` starts from (default `skills/nanobot/nanobot-kernel-session/config.json`) |
 | `RSYNC_ALLOWLIST` | Comma-separated repo paths to sync to instances, instead of `config/rsync_allowlist.json` |
 | `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL` | `--harness claude-code`: use an API key or a custom endpoint instead of the account `claude login` set up |
 | `OPENROUTER_API_KEY` and the other litellm provider variables | `--harness own`: the key litellm uses for any provider or field that `eval/llm_providers.json` leaves out |
-| `OPENAI_API_KEY`, `OPENAI_API_BASE` (or `OPENAI_BASE_URL`) | Override the key and endpoint in the codex `config.json` |
+| `OPENAI_API_KEY`, `OPENAI_API_BASE` (or `OPENAI_BASE_URL`) | Override the key and endpoint in the Codex `config.json` |
 | `TF_VAR_ssh_key_files` | Per-label SSH private key as JSON, e.g. `{"ncnn-sme2": "~/.ssh/mac-m4-key.pem"}` (default `~/.ssh/id_rsa`); Terraform imports the `.pub` next to it as that label's key pair |
 
 ## Timing protocol
@@ -103,8 +103,7 @@ than about 1 ms, most of all on Apple Silicon.
 Every trace records its `inner_iters` and a `timing_protocol` string built
 from the four values above. A baseline counts for a candidate only when both
 carry the same `timing_protocol`, so measurements taken another way (for
-example with the earlier defaults, `warmup: 5` and `inner_iters: 1`) are
-never mixed in. A session re-collects such a baseline before it scores
+example with a different `warmup` or `inner_iters`) are never mixed in. A session re-collects such a baseline before it scores
 anything against it, which means that changing any of the four values
 re-collects the baselines on every instance. With `bench.cli`, run
 `collect-baselines` again; until then `bench` reports no speedup rather than

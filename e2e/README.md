@@ -10,7 +10,7 @@ perplexity.
   For a new model, `plugins/llamacpp/` (`kgen discover`) and the `gen-definition` skill make them.
 - **Agent solutions** under `bench-trace/solutions/llama.cpp/<author>/gemm/`: run the agents with
   `test_scripts/bench_fleet.py --dataset llama.cpp --definitions "<names>" --sync-solutions ...`.
-- **A Graviton box** registered in `provisioning/eval_config.json` under the label `e2e-<model>-<isa>`, use `--label` to pick the exact instance you like to run the e2e experiment. Or, you could let `evaluate` create it with `--provision`
+- **A Graviton box** registered in `provisioning/eval_config.json` under the label `e2e-<model>-<isa>` (`--label` picks another one), or let `evaluate` create it with `--provision`.
 
 ## Usage
 
@@ -31,9 +31,9 @@ results later with the same command plus `--fetch`. `--text FILE` is a path on t
 | `kvr` | box | Optional (`--kvr`). Times every kernel of the manifest on one thread against llama.cpp's repack and norepack paths, for several M. | `--kvr-m` |
 | `report` | box | Prints throughput, speedup, perplexity and agreement with stock of the builds (and the `kvr` table) as tables, saved as `report.txt`. If the results file is missing it is rebuilt from `--log`, the output `measure` printed. | `--baseline`, `--log` |
 
-`--steps a,b` runs only some of them; a step whose result is already in the run directory is skipped, you can use `--force` to redo the whole process.
+`--steps a,b` runs only some of them. A step whose result is already in the run directory is skipped; `--force` redoes it.
 
-`--here` runs the steps in the current process instead of launching them on the box. you only need it after logging in to the box to redo one step, e.g.
+`--here` runs the steps in the current process instead of launching them on the box. You only need it after logging in to the box to redo one step, e.g.
 `python -m e2e evaluate --model qwen3.5-4b --here --steps measure`.
 
 - `--kernel all` (default) uses every submitted definition tagged `e2e:<model>`; `--kernel NAME [NAME ...]` just those kernels, each of which the `--author` must have submitted.
@@ -44,7 +44,7 @@ results later with the same command plus `--fetch`. `--text FILE` is a path on t
 
 The run directory `e2e-runs/llamacpp-<model>-<isa>/` holds:
 
-- `manifest.json` and the kernels' `.so` files (`kernel_set`): which matmuls the hook replaces, and what it is replaced to.
+- `manifest.json` and the kernels' `.so` files (`kernel_set`): which matmuls the hook replaces, and what it replaces them with.
 - `e2e_results.json` (`measure`): every llama-bench sample, the median/min/max summary, perplexity and KL-divergence numbers, the hook check, host, date and llama.cpp commit.
 - `hook_agent.log` (`measure`): which kernels the hook replaced, with which ABI, and how each call was split across threads.
 - `kld_<build>.log` (`measure --kld`): llama-perplexity's full KL-divergence output for each build.
@@ -56,10 +56,10 @@ Tearing the box down stays with `provisioning/provision.py --teardown --label ..
 
 ## What is compared
 
-Three builds: 
-- **stock**: llamacpp default setting on this e2e model 
-- **norepack**: llamacpp with ggml's repack and KleidiAI paths off, enable with `--build-norepack`
-- **agent**: the norepack configuration plus the override hook, which replaces only the matmuls listed in the manifest with the agent's kernels, enable with `--build-agent`
+Three builds:
+- **stock**: llama.cpp's default build, run on the e2e model
+- **norepack**: llama.cpp with ggml's repack and KleidiAI paths off; built by `deploy` with `--agent-build`
+- **agent**: the norepack configuration plus the override hook, which replaces only the matmuls listed in the manifest with the agent's kernels; also built with `--agent-build`
 
 Details of the hook: `e2e/override/README.md`.
 
@@ -73,10 +73,10 @@ Details of the hook: `e2e/override/README.md`.
 Options that change how they run:
 
 - `--ub N` (micro-batch, llama.cpp's `-ub`): while processing the prompt, llama.cpp feeds it to the model in chunks of at most N tokens (default 512). So `--ub` sets the biggest M the kernels see in pp: with a prompt of 2048 tokens and `--ub 512` it runs 4 chunks of 512, with `--ub 1` it runs 2048 chunks of one token each (like decode). It does not affect tg.
-- `--fa on|off` (flash attention): a different way to compute attention, which is not what the agent replaced. Default `off`: on the Graviton box llama.cpp's own `auto` choice picked the slower path, which
-  made the long-prompt numbers misleading.
+- `--fa on|off` (flash attention): a different way to compute attention, which is not what the agent replaced. Default `off`: on the Graviton box llama.cpp's own `auto` choice picks the slower path, which
+  makes the long-prompt numbers misleading.
 - `--text FILE` (a text file on the box) is the text the quality checks run on; without it none runs.
-  - **Perplexity**: how well each build predicts the text, lower is better. `--ppl-chunks N` sets only first N chunks are used to compute perplexity, a chunk is a window of 512 tokens, and `N=64` by default
+  - **Perplexity**: how well each build predicts the text, lower is better. It is computed on the first `--ppl-chunks N` chunks of the text (default 64); a chunk is a window of 512 tokens.
 - `--kld` (needs `--text`) compares every build with stock at each position of the first `--kld-chunks` chunks of the text (default 32, about 16K tokens):
   - **Mean KLD**: how far the build's next-token probabilities are from stock's; 0 means identical, smaller is better.
   - **RMS Δp**: how much the probability of the token that actually comes next in the text differs from stock's.

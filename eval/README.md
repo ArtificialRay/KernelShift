@@ -24,8 +24,8 @@ pip install -r requirements.txt   # from repo root
   `llm_providers.json.example`), which sets `api_key` / `api_base` per
   provider and falls back to the environment for anything left out.
 - For provisioning: an AWS account, Terraform (`terraform/`), an SSH key and
-  `provisioning/workspaces.json` (see the top-level README's Configuration
-  section). `provisioning/eval_config.json` is written by the tools and
+  `provisioning/workspaces.json` (see the top-level README's AWS setup and
+  `docs/configuration.md`). `provisioning/eval_config.json` is written by the tools and
   records the instances that are up, one per label.
 
 ## Quickstart

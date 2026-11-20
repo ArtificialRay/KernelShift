@@ -1,6 +1,6 @@
 # mcp_app — MCP server for kernel-optimization sessions
 
-Exposes `check_progress`/`compile`/`evaluate`/`disassemble` (evaluate()
+Exposes `check_progress`/`compile`/`evaluate`/`disassemble` (`evaluate()`
 auto-submits each new best) as an MCP server running in-process on the target instance, so an external agent harness
 (nanobot, Claude Code, Codex, ...) can drive kernel-optimization sessions. Zero coupling to `eval/` or
 `skills/` — never provisions instances, never imports either.
@@ -11,24 +11,24 @@ auto-submits each new best) as an MCP server running in-process on the target in
 mcp_app/
     agent_tools/
         base.py                 # KernelSession ABC — compile/evaluate/disassemble/submit.
-                                 #   Multi-definition: self._definitions keyed by definition
-                                 #   name, nothing evicted for the process's life.
+                                #   Multi-definition: self._definitions keyed by definition
+                                #   name, nothing evicted for the process's life.
         baseline_readiness.py   # per-definition baseline check-then-collect; called
-                                 #   lazily from KernelSession.compile() on first touch
+                                #   lazily from KernelSession.compile() on first touch
         ncnn.py, simd_loop.py, llama_cpp.py, kleidiai.py   # per-dataset KernelSession subclasses
-        registry.py              # resolve_tools(dataset) -> Type[KernelSession]
-        dispatcher.py            # one tool surface over several datasets' sessions
-                                 #   (used when --dataset is passed more than once)
-        ops.py                    # compile_kernel/evaluate_kernel/disassemble_so
-        isa.py                     # march_for_isa(isa) + verify_isa_available(isa)
-        trajectory.py                # TrajectoryWriter — per-definition audit trail
-        schemas.py                # tool schemas
-    session.py                # SessionConfig + build_tools() — server-side bootstrap;
-                               #   also eagerly writes every definition's
-                               #   reference-scalar-kernel.cpp at startup
-    server.py                  # the MCP server process itself (--transport stdio|streamable-http)
-    resources.py                 # MCP Resources over a session's run_dir —
-                                 #   nested one dir per definition
+        registry.py             # resolve_tools(dataset) -> Type[KernelSession]
+        dispatcher.py           # one tool surface over several datasets' sessions
+                                #   (used when --dataset is passed more than once)
+        ops.py                  # compile_kernel/evaluate_kernel/disassemble_so
+        isa.py                  # march_for_isa(isa) + verify_isa_available(isa)
+        trajectory.py           # TrajectoryWriter — per-definition audit trail
+        schemas.py              # tool schemas
+    session.py                  # SessionConfig + build_tools() — server-side bootstrap;
+                                #   also eagerly writes every definition's
+                                #   reference-scalar-kernel.cpp at startup
+    server.py                   # the MCP server process itself (--transport stdio|streamable-http)
+    resources.py                # MCP Resources over a session's run_dir —
+                                #   nested one dir per definition
 ```
 
 ## 2. Starting the server
@@ -49,9 +49,9 @@ Two transports:
 - streamable-http (default): harness and server on different hosts, e.g. a server on AWS Graviton
 - stdio: harness spawns the server as a subprocess on the same host
 
-## 3. Starting the server before agent harness
+## 3. Starting the server for an agent harness
 
-Agent harness spawns one `mcp_app.server`. `skills/launch/launch_session.py` is the
+Each harness session talks to one `mcp_app.server`. `skills/launch/launch_session.py` is the
 harness-agnostic script that provisions/reaches an instance, starts a
 persistent `mcp_app.server` on it in streamable-http mode reached over an
 SSH local-port-forward (not exposed publicly — the compile/evaluate tool

@@ -2,26 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Implementation Guide
-
-- USE AS LESS HIDDEN FUNCTION (function with "_" beforehead) AS YOU CAN IN YOUR IMPLEMENTATION
-- DO NOT INITIAIZE MORE THAN 5 BACKGROUND TASKS, THEY WILL CRASH THE WSL!!
-- For macm4.metal instance, OPEN AT MOST 2 DEDICATED HOST ONLY! IF YOU HAVE ALREADY OPENED A DEDICATED HOST, PLEASE REUSE IT INSTEAD OF OPENING A NEW ONE
-
-
 ## What this repo is
 
 **KernelShift** evaluates LLMs on their ability to write optimized AArch64
 SIMD kernels for ncnn / llama.cpp / Arm SIMD Loops / KleidiAI. Three evaluation
 paths, all built on the same `bench/` harness, the same `bench-trace/` warehouse,
-and — as of the eval/mcp_client.py migration — the same `mcp_app/server.py` tool
+and the same `mcp_app/server.py` tool
 execution surface for every agent-driven path:
 
 - **Path 1 — In-repo litellm agent loop** (`eval/`): a self-contained litellm
   agent loop (`eval/evaluator.py::run_agentic_eval`) drives check_progress/compile/
   evaluate/disassemble as an MCP client of `mcp_app/server.py` (`eval/mcp_client.py`),
   started on a provisioned Graviton instance over an SSH-tunneled MCP session —
-  the same server nanobot/Claude Code drive in Path 3, just with this repo's
+  the same server nanobot/Claude Code/Codex drive in Path 3, just with this repo's
   own litellm loop as the client instead of an external harness. Driven via
   `test_scripts/bench_fleet.py --harness own` — the same batch-fleet entry
   point Path 3's harnesses use (`OwnHarnessAdapter` in
@@ -33,7 +26,7 @@ execution surface for every agent-driven path:
   Also the library every other path calls into.
 - **Path 3 — MCP-server-driven eval** (`mcp_app/` + `skills/`): the same
   check_progress/compile/evaluate/disassemble surface exposed as an MCP server
-  (`mcp_app/server.py`) so an external agent harness (nanobot, Claude Code)
+  (`mcp_app/server.py`) so an external agent harness (nanobot, Claude Code, Codex)
   drives the session instead of an in-repo agent loop. `skills/launch/`
   provisions an instance and starts the server; `skills/<harness>/` holds
   that harness's own `SKILL.md`.
@@ -53,7 +46,8 @@ based on `is_baseline` (whether `solution.author == baseline_author`):
 - **`CandidateBuilder`** (`bench/compile/builders/candidate.py`): the raw `float*`
   ABI path for ALL non-baseline solutions. No ncnn dependency. The solution's
   own sources define `kernelshift_entry_<op>` — the only shared code is what ships
-  in the solution JSON. Uses `-O3 -march=armv8.2-a+sve -std=c++14` for SVE.
+  in the solution JSON. Compile flags come from the solution's own `compile_flags`
+  (an MCP session sets `-O3` plus `march_for_isa(isa)`).
 - **`NcnnBuilder`** (`bench/compile/builders/ncnn.py`): baseline-only for ncnn
   dataset. Links against real `libncnn.a` from `ncnn/build/src/`. Each baseline
   solution ships its own `binding.cpp` (defines `kernelshift_entry_<op>` with
@@ -63,8 +57,8 @@ based on `is_baseline` (whether `solution.author == baseline_author`):
   and llama.cpp solutions. Self-contained solutions (harness sources fused into
   solution JSON).
 
-Both GCC (`g++-13`, `g++-14`, `g++`) and clang (`clang++-18`, `clang++`, `clang++-17`)
-are detected at build time (see `_resolve_cxx` in `bench/compile/builder.py`).
+The first available clang (`clang++`, `clang++-18`, `clang++-17`, `clang++-16`) is
+picked at build time (see `_resolve_cxx` in `bench/compile/builder.py`).
 
 ### Candidate kernel ABI (raw float* path)
 
@@ -89,7 +83,7 @@ Key constraints for candidate kernels:
 - **No OpenMP** — `#pragma omp` and any threading APIs are detected by source-pattern
   scanning in `bench/config.py` (`DEFAULT_DISALLOWED_SOURCE_PATTERNS`) and will be
   rejected by the evaluator.
-- `Kernel.cpp` is the expected file path for the LLM's implementation. The entry
+- `kernel.cpp` is the expected file path for the LLM's implementation. The entry
   symbol name matches the op type (e.g., `inner_conv2d_depthwise` for conv2d_depthwise).
 - Per-definition constants (`Kh`, `Kw`, `Sh`, `Sw`, `Dh`, `Dw`, `pad`) are baked
   into a namespace (`conv2d_depthwise_def`) in the solution's `.h` file.
@@ -119,10 +113,10 @@ Timing (`bench/runtime/timing.py`):
 
 Correctness (`bench/runtime/correctness.py`):
 - An element FAILS only if BOTH `|got-ref| > abs_tol` AND `|got-ref|/|ref| > rel_tol`
-  (AND condition — more lenient than old `diff > abs_tol + rel_tol * |ref|`)
+  (AND condition — more lenient than the usual `diff > abs_tol + rel_tol * |ref|`)
 - Default tolerances: abs=1e-3, rel=1e-3, required_matched_ratio=1.0
 - Per-op-type overrides in `config/kernel_contracts.yaml` (gemm: 2e-3/1e-2/0.98,
-  moe: 1e-2/5e-2/0.95, mha: same as default, gqa/mla refine: custom)
+  moe: 1e-2/5e-2/0.95, mha: 1e-3/1e-3/0.98, gqa/mla: custom)
 
 ### MCP server internals (`mcp_app/`)
 
@@ -135,12 +129,13 @@ Correctness (`bench/runtime/correctness.py`):
 - **Long-lived process**: one server serves every definition in `--dataset`.
   `compile()` takes `definition` string as per-call argument.
 - **`KernelSession` ABC** (`mcp_app/agent_tools/base.py`): subclasses per dataset
-  (`ncnn.py`, `simd_loop.py`, `llama_cpp.py`). `DispatcherKernelSession`
+  (`ncnn.py`, `simd_loop.py`, `llama_cpp.py`, `kleidiai.py`). `DispatcherKernelSession`
   (`dispatcher.py`) routes across multiple datasets when a run spans them.
 - **Lazy baseline collection** (`baseline_readiness.py`): first `compile()` call
   triggers baseline check-then-collect for that definition.
 - **Isolated evaluation**: `evaluate_kernel()` in `ops.py` wraps everything in
-  `run_in_subprocess` (timeout=750s, under the MCP client's 900s tool timeout).
+  `run_in_subprocess` (timeout=1200s, `mcp_tool_timeouts.evaluate_s`, under the
+  MCP client's 1500s tool timeout).
 - ISA verification: `verify_isa_available()` checks `/proc/cpuinfo` at startup.
   `march_for_isa()` is the compile-flag authority.
 - Multi-dataset routing: `DispatcherKernelSession` wraps multiple per-dataset
@@ -217,29 +212,28 @@ bench-trace/                    # On-disk warehouse (TraceSet root) — .gitigno
 eval/                           # In-repo litellm agent loop (Path 1)
   evaluator.py                  # run_agentic_eval turn loop (prompts, retries, history compression)
   mcp_client.py                 # MCP client bridge — attach()es to an already-running
-                                 #   mcp_app/server.py session (check_progress/compile/evaluate/disassemble),
-                                 #   same server Path 3 drives; provisioning/tunnel lifecycle is the
-                                 #   caller's (test_scripts/bench_fleet.py's) job, not this module's
+                                #   mcp_app/server.py session (check_progress/compile/evaluate/disassemble),
+                                #   same server Path 3 drives; provisioning/tunnel lifecycle is the
+                                #   caller's (test_scripts/bench_fleet.py's) job, not this module's
   llm_providers.py              # resolve_completion_kwargs() — optional per-provider
-                                 #   api_key/api_base override for litellm.completion()
+                                #   api_key/api_base override for litellm.completion()
   llm_providers.json            # per-provider api_key/api_base — copy from .example;
-                                 #   optional, litellm falls back to env vars (ANTHROPIC_API_KEY etc.)
-                                 #   for any provider/field left out or if this file is absent
+                                #   optional, litellm falls back to env vars (ANTHROPIC_API_KEY etc.)
+                                #   for any provider/field left out or if this file is absent
 
-provisioning/                   # Terraform/EC2 lifecycle shared by all three paths (Path 1's
-                                 #   eval/evaluator.py and Path 3's skills/launch/launch_session.py) — invoked
-                                 #   only via subprocess by skills/launch/ (zero imports from
-                                 #   eval/ or provisioning/), imported directly elsewhere
+provisioning/                   # Terraform/EC2 lifecycle shared by the remote paths (Paths 1 and 3, via
+                                #   test_scripts/bench_fleet.py and skills/launch/launch_session.py) — invoked
+                                #   only via subprocess by skills/launch/ (zero imports from
+                                #   eval/ or provisioning/), imported directly elsewhere (e.g. e2e/)
   provision.py                  # Terraform lifecycle for Graviton EC2 instances
   remote.py                     # InstanceHandle — SSH/rsync to a provisioned instance
   eval_config.json              # SSH connection info per label — written by provision.py; don't copy
-                                 #   the .example (its labels would count as live instances, e.g. for --teardown)
+                                #   the .example (its labels would count as live instances, e.g. for --teardown)
   workspaces.py                 # current_workspace_config() — per-Terraform-workspace AWS
-                                 #   account/namespace/profile, keyed by `terraform workspace show`
-  workspaces.json                # workspace -> {account_id, namespace, aws_profile, aws_region, security_group_id} — copy from
-                                 #   .example; provision.py always injects these per terraform call
-                                 #   instead of relying on a single global .env value (see
-                                 #   workspaces.py's module docstring for the incident that motivated it)
+                                #   account/namespace/profile, keyed by `terraform workspace show`
+  workspaces.json               # workspace -> {account_id, namespace, aws_profile, aws_region, security_group_id} — copy from
+                                #   .example; provision.py always injects these per terraform call
+                                #   instead of relying on a single global .env value
 
 mcp_app/                        # MCP server for Path 3
   server.py                     # MCP server (--transport stdio|streamable-http)
@@ -248,7 +242,7 @@ mcp_app/                        # MCP server for Path 3
   agent_tools/
     base.py                     # KernelSession ABC
     dispatcher.py               # DispatcherKernelSession (multi-dataset routing)
-    ncnn.py, simd_loop.py, llama_cpp.py
+    ncnn.py, simd_loop.py, llama_cpp.py, kleidiai.py
     ops.py                      # compile_kernel/evaluate_kernel/disassemble_so
     isa.py                      # march_for_isa() + verify_isa_available()
     trajectory.py               # per-definition audit trail writer
@@ -256,17 +250,17 @@ mcp_app/                        # MCP server for Path 3
     registry.py                 # resolve_tools(dataset) -> Type[KernelSession]
 
 skills/                         # Harness-agnostic session launch
-  launch/launch_session.py      # provision/prepare-session/sync-results/status/teardown
+  launch/launch_session.py      # launch/provision/prepare-session/sync-results/status/teardown
   nanobot/nanobot-kernel-session/
     SKILL.md, README.md
 
-test_scripts/                   # Batch-fleet entry point, shared across all three paths
-  bench_fleet.py                 # `--harness {claude-code,nanobot,own}` — compute author/label
-                                 #   once, provision, prepare_session, retry/log/sync loop over
-                                 #   every definition matching --dataset
+test_scripts/                   # Batch-fleet entry point, shared by Paths 1 and 3
+  bench_fleet.py                # `--harness {claude-code,codex,nanobot,own}` — compute author/label
+                                #   once, provision, prepare_session, retry/log/sync loop over
+                                #   every definition matching --dataset
   harness_adapters/             # One module per harness: HarnessAdapter (ClaudeCodeAdapter/CodexAdapter/NanobotAdapter/
-                                 #   OwnHarnessAdapter) — what's genuinely harness-specific: how
-                                 #   each is invoked, how it connects to the MCP endpoint
+                                #   OwnHarnessAdapter) — what's genuinely harness-specific: how
+                                #   each is invoked, how it connects to the MCP endpoint
 
 plugins/                        # Archived kgen discover plugins that generated what is already in the dataset
   simd_loop/plugin.py           # simd-loop harnesses + bench-trace artifacts (needs dataset/problems, loops/, clang)
@@ -291,11 +285,11 @@ python provisioning/provision.py --teardown
 ### In-repo litellm agent loop (Path 1 — requires Graviton instance)
 ```bash
 python3 test_scripts/bench_fleet.py --harness own \
-    --dataset ncnn --isa sve2 --model anthropic/claude-opus-4-6
+    --dataset ncnn --isa sve2 --model anthropic/claude-opus-4-8
 # Narrow to specific definitions (space-separated or a JSON array); empty --definitions = every
 # definition matching --dataset
 python3 test_scripts/bench_fleet.py --harness own \
-    --dataset ncnn --isa sve2 --model anthropic/claude-opus-4-6 --definitions loop_001
+    --dataset simd-loop --isa sve2 --model anthropic/claude-opus-4-8 --definitions loop_001
 ```
 
 ### Validate via CLI (bench/cli.py)
@@ -311,7 +305,7 @@ python -m bench.cli bench --definition conv2d_depthwise_fp32_kh5_kw5_sh2_sw2_dh1
 python -m bench.cli bench-author --dataset simd-loop --isa sve            # author defaults to that dataset's reference
 python -m bench.cli bench-author --author reference-scalar --dataset ncnn
 
-# baselines for one dataset / definition (there is no default dataset any more)
+# baselines for one dataset / definition (--dataset is required unless --baseline-author is given)
 python -m bench.cli collect-baselines --dataset simd-loop --isa sve
 ```
 
@@ -334,7 +328,7 @@ python3 -m mcp_app.server --dataset ncnn --author claude-code --isa sve \
   --baseline-author baseline-ncnn
 
 # Launch session (skills/launch/)
-python3 launch_session.py launch --isa sve --dataset ncnn
+python3 skills/launch/launch_session.py launch --isa sve --dataset ncnn
 ```
 
 ### Regenerate definitions/workloads
@@ -362,15 +356,15 @@ python -m kgen discover plugins/simd_loop/plugin.py -- --out-dir /tmp/stage   # 
    `bench/config.py::DEFAULT_DISALLOWED_SOURCE_PATTERNS`. Rejected at eval time.
 2. **Single-core timing** — `num_threads=1` assumed. The timer uses CPU pinning
    and does not support multi-threaded timing.
-3. **Candidate kernel entry points must be `extern "C"`** — the dlopen/cffi
-   binding looks them up by mangled name.
+3. **Candidate kernel entry points must be `extern "C"`** — the dlopen/ctypes
+   binding looks them up by their unmangled C name.
 4. **Solution JSONs are self-contained** — each embeds its own harness sources
    (`.h` + `.cpp` + `kernel.cpp`). The builder materializes them to a temp dir
    and compiles them together.
 5. **`ncnn/` is NOT in this repo** — must be cloned and built separately for
    ncnn baseline evaluation (see ncnn builder section above).
 6. **Subprocess isolation** — every evaluation spawns a child process for crash
-   protection. Timeout defaults to 750s in MCP mode, configurable per eval.
+   protection. Timeout defaults to 1200s (`mcp_tool_timeouts.evaluate_s`).
 7. **ISA mismatch at MCP startup** — `verify_isa_available()` reads
    `/proc/cpuinfo` and rejects an ISA the hardware doesn't support (safety
    check, not compile-flag authority — that's `march_for_isa()`).
