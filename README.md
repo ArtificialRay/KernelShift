@@ -19,7 +19,7 @@ expert implementation.
 | **Total** | | **144** | **99** |
 
 The tasks live in the Hugging Face dataset
-[`arm-bench/KernelShift`](https://huggingface.co/datasets/arm-bench/KernelShift).
+[`l3lab/KernelShift`](https://huggingface.co/datasets/l3lab/KernelShift).
 Its `expected_sets.json` lists the evaluation set, and its `TASKS.md` lists, for every
 definition, the expert baseline on each hardware tier and whether it runs there. The
 end-to-end definitions are used to splice agent kernels into llama.cpp
@@ -33,7 +33,7 @@ Python 3.12 or later, and `clang++` (Apple clang works on macOS).
 git clone https://github.com/cmu-l3/kernel-shift && cd kernel-shift
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-hf download arm-bench/KernelShift --repo-type dataset --local-dir bench-trace
+hf download l3lab/KernelShift --repo-type dataset --local-dir bench-trace
 ```
 
 Every tool reads the dataset from `bench-trace/`. Check that it loaded:
