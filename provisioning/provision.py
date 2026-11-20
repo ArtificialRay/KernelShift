@@ -1,0 +1,656 @@
+"""
+provisioning/provision.py — standalone Terraform lifecycle wrapper for Arm
+EC2 instances (Graviton3/4). Provisions an instance, waits for it to be
+ready, rsyncs source, installs deps, and (optionally) builds a dataset's
+native lib. Writes/reads a single shared config file,
+provisioning/eval_config.json.
+
+Usage:
+    python provisioning/provision.py --isa sve2 --dataset ncnn
+    # label defaults to "ncnn-sve2". Reuses a reachable instance under that
+    # label if eval_config.json has one recorded, otherwise runs terraform
+    # apply for a fresh one. To force a genuinely new instance: `--teardown
+    # --label ncnn-sve2` first, then provision again.
+
+    python provisioning/provision.py --teardown --label ncnn-sve2   # tear down just that one
+    python provisioning/provision.py --teardown                     # tear down every known label
+    python provisioning/provision.py --status
+"""
+
+import argparse
+import contextlib
+import fcntl
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from contracts import ISA_INSTANCE_MAP
+from provisioning.remote import InstanceHandle
+from provisioning.workspaces import current_workspace, current_workspace_config, workspace_account_ids
+
+REPO_ROOT = Path(__file__).parent.parent
+load_dotenv(REPO_ROOT / ".env")
+TERRAFORM_DIR = REPO_ROOT / "terraform"
+EVAL_CONFIG_PATH = Path(__file__).parent / "eval_config.json"
+
+# Repo-root-relative paths mcp_app/bench actually need on the remote side.
+# Allow-list, not a deny-list — see InstanceHandle.rsync_to's docstring.
+# Persistent default: config/rsync_allowlist.json (shared with skills/launch and
+# mcp_app, which don't import from here). RSYNC_ALLOWLIST in .env
+# (comma-separated) overrides it for a one-off experiment.
+RSYNC_ALLOWLIST = (
+    [p.strip() for p in os.environ.get("RSYNC_ALLOWLIST", "").split(",") if p.strip()]
+    or json.loads((REPO_ROOT / "config" / "rsync_allowlist.json").read_text())["paths"]
+)
+
+DATASET_BUILDS_PATH = REPO_ROOT / "config" / "dataset_builds.json"
+
+# Must stay shell/HCL/JSON-key/AWS-tag safe — flows into a `terraform -target`
+# CLI arg, an eval_config.json dict key, and an AWS resource tag. Rejected
+# outright rather than silently sanitized (see default_label()'s docstring).
+LABEL_RE = re.compile(r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$")
+
+
+def _validate_label(label: str) -> str:
+    if not LABEL_RE.match(label):
+        raise ValueError(
+            f"Invalid label {label!r} — must match {LABEL_RE.pattern} "
+            "(lowercase letters/digits, '.'/'-' in the middle only)."
+        )
+    return label
+
+
+def default_label(isa: str | None, dataset: str, instance_type: str) -> str:
+    """f'{dataset}-{isa}' when both are known (same dataset on different isas
+    needs distinct instances), else isa alone, else the tier implied by
+    instance_type."""
+    if dataset and isa:
+        return f"{dataset}-{isa}"
+    if isa:
+        return isa
+    return _tier_for_instance_type(instance_type)
+
+
+def _tier_for_instance_type(instance_type: str) -> str:
+    return "c8g" if "c8g" in instance_type else "c7g"
+
+
+def _tf_instance_env(label: str, instance_type: str) -> dict:
+    """Generates TF_VAR_instances and TF_VAR_mac_host_ids scoped to `label`.
+
+    Must be called inside `_tf_lock()` to ensure atomic host assignment across concurrent processes.
+
+    Key Invariants:
+    - TF_VAR_instances: Combines target `label` with ALL existing labels in the current
+    Terraform state (`terraform show -json`). Omitting state labels causes Terraform's
+    `for_each` to destroy active instances. Source state is read from TF directly rather
+    than `eval_config.json` to avoid cross-checkout pollution.
+    - TF_VAR_mac_host_ids: Maps Mac labels to existing, available Dedicated Hosts (validating
+    against AWS). Assigns the newest idle host to new Mac labels or raises if none are free;
+    never allocates new hosts due to 24h minimum billing limits.
+    """
+    instances: dict[str, str] = {}
+    hosts: dict[str, str] = {}
+    result = _tf("show", "-json", capture=True)
+    if result.returncode == 0 and result.stdout:
+        try:
+            state = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            state = {}
+        for r in state.get("values", {}).get("root_module", {}).get("resources", []):
+            v = r.get("values") or {}
+            if (r.get("type"), r.get("name")) == ("aws_instance", "labeled") and r.get("index") and v.get("instance_type"):
+                instances[r["index"]] = v["instance_type"]
+                if v["instance_type"].startswith("mac") and v.get("host_id"):
+                    hosts[r["index"]] = v["host_id"]
+    instance_type = instances.setdefault(label, instance_type)
+
+    if instance_type.startswith("mac") or hosts:
+        ws_cfg = current_workspace_config()
+        cmd = ["aws", "ec2", "describe-hosts", "--region", ws_cfg["aws_region"], "--output", "json"]
+        if ws_cfg.get("aws_profile"):
+            cmd += ["--profile", ws_cfg["aws_profile"]]
+        described = subprocess.run(cmd, capture_output=True, text=True)
+        if described.returncode != 0:
+            raise RuntimeError(f"aws ec2 describe-hosts failed:\n{described.stderr}")
+        all_hosts = json.loads(described.stdout)["Hosts"]
+        live = {h["HostId"] for h in all_hosts if h["State"] != "released"}
+        hosts = {l: h for l, h in hosts.items() if h in live}
+
+        if instance_type.startswith("mac") and label not in hosts:
+            free = [h for h in all_hosts
+                    if h["State"] == "available" and not h.get("Instances")
+                    and h["HostProperties"]["InstanceType"] == instance_type
+                    and h["HostId"] not in hosts.values()]
+            if not free:
+                by_state = {}
+                for h in all_hosts:
+                    by_state[h["State"]] = by_state.get(h["State"], 0) + 1
+                raise RuntimeError(
+                    f"No free {instance_type} Dedicated Host for label {label!r} (hosts by state: {by_state}). "
+                    "A host that just lost its instance stays `pending` while AWS scrubs it — retry later. "
+                    "To allocate one (24h minimum billing), run: aws ec2 allocate-hosts "
+                    f"--instance-type {instance_type} --availability-zone <az> --quantity 1 "
+                    f"--region {ws_cfg['aws_region']}"
+                )
+            hosts[label] = max(free, key=lambda h: h["AllocationTime"])["HostId"]
+            print(f"[provision] Picked Dedicated Host {hosts[label]} for {label!r}")
+    return {"TF_VAR_instances": json.dumps(instances), "TF_VAR_mac_host_ids": json.dumps(hosts)}
+
+
+def _tf(*args, capture: bool = False, extra_env: dict | None = None) -> subprocess.CompletedProcess:
+    """Run `terraform <args>`, with the current Terraform workspace's
+    namespace/account-guard/AWS profile (provisioning/workspaces.json, via
+    current_workspace_config()) always injected. `extra_env`
+    (e.g. TF_VAR_instances) is call-specific and takes precedence."""
+    cmd = ["terraform"] + list(args)
+    ws_cfg = current_workspace_config()
+    base_env = {
+        "TF_WORKSPACE": current_workspace(),
+        "TF_VAR_namespace": ws_cfg.get("namespace") or "",
+        "TF_VAR_workspace_account_ids": json.dumps(workspace_account_ids()),
+        "TF_VAR_aws_region": ws_cfg["aws_region"],
+        "TF_VAR_security_group_id": ws_cfg["security_group_id"],
+    }
+    if ws_cfg.get("aws_profile"):
+        base_env["AWS_PROFILE"] = ws_cfg["aws_profile"]
+    env = {**os.environ, **base_env, **(extra_env or {})}
+    return subprocess.run(
+        cmd,
+        cwd=TERRAFORM_DIR,
+        capture_output=capture,
+        text=True,
+        env=env,
+    )
+
+
+@contextlib.contextmanager
+def _tf_lock():
+    """Serialise terraform apply/destroy across concurrent driver processes.
+    Terraform's own state lock makes concurrent callers fail ("Error acquiring
+    the state lock"); this one makes them wait their turn instead."""
+    lock_path = TERRAFORM_DIR / ".kernelshift.lock"
+    with open(lock_path, "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
+def _tf_output() -> dict:
+    result = _tf("output", "-json", capture=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"terraform output failed:\n{result.stderr}")
+    return json.loads(result.stdout)
+
+
+def _dataset_config(dataset: str) -> dict | None:
+    """Load the dataset_builds.json entry for `dataset`, or None if it has no build steps."""
+    if not DATASET_BUILDS_PATH.exists():
+        return None
+    return json.load(DATASET_BUILDS_PATH.open()).get(dataset)
+
+
+def _dataset_ready(handle: InstanceHandle, config: dict) -> bool:
+    """True if `config`'s ready_check command exits 0 on the remote."""
+    ready_check = config.get("ready_check")
+    if not ready_check:
+        return False
+    rc, _, _ = handle.run(ready_check, timeout=15)
+    return rc == 0
+
+
+def _run_dataset_build(handle: InstanceHandle, dataset: str, config: dict) -> bool:
+    """Run dataset build steps on the remote. Returns True iff every step succeeded."""
+    steps = config.get("steps", [])
+    if not steps:
+        return True
+    print(f"[provision] Building dataset {dataset!r} ({len(steps)} step(s))...")
+    ok = True
+    darwin = handle.instance_type.startswith("mac")
+    for step in steps:
+        label = step["label"]
+        # A step that cannot run as-is on macOS carries a "cmd_darwin" override,
+        # so the common Linux command never has to be rewritten to suit both.
+        cmd = step.get("cmd_darwin", step["cmd"]) if darwin else step["cmd"]
+        print(f"[provision]   {label}...")
+        rc, _, err = handle.run(cmd, timeout=step.get("timeout", 300))
+        if rc != 0:
+            print(f"[provision]   WARNING: {label} failed: {err[:200]}")
+            ok = False
+    return ok
+
+
+def ensure_dataset_ready(handle: InstanceHandle, dataset: str) -> None:
+    """Make sure `dataset`'s build artifacts are present on `handle`, building if needed.
+
+    Safe to call on an instance that was provisioned without this dataset (or without
+    any dataset at all) — it self-heals by building on demand. Raises RuntimeError if
+    the build steps fail (or the ready_check still fails afterward), so callers don't
+    silently proceed to run an agent against an instance missing what it needs.
+    """
+    if not dataset:
+        return
+    config = _dataset_config(dataset)
+    if not config:
+        return  # no build steps registered for this dataset (e.g. simd-loop)
+    if _dataset_ready(handle, config):
+        print(f"[provision] Dataset {dataset!r} already built on {handle.host}.")
+        return
+    print(f"[provision] Dataset {dataset!r} not ready on {handle.host}; building...")
+    built = _run_dataset_build(handle, dataset, config)
+    if not _dataset_ready(handle, config):
+        raise RuntimeError(
+            f"Dataset {dataset!r} failed to build on {handle.host}. "
+            f"SSH in and check manually before running an eval."
+        )
+    if not built:
+        print(f"[provision] Dataset {dataset!r} ready on {handle.host} "
+              f"(one or more build steps reported a non-zero exit above, but "
+              f"the ready_check now passes — likely a harmless re-run).")
+    else:
+        print(f"[provision] Dataset {dataset!r} ready on {handle.host}.")
+
+
+def _linux_dep_steps() -> list[tuple[str, str, int]]:
+    return [
+        (
+            "disable unattended-upgrades",
+            # Ubuntu's daily apt-daily-upgrade.timer can upgrade openssh-server
+            # and restart ssh.service, killing every SSH session (and the
+            # mcp_app.server using it) with no clean FIN, so the client hangs
+            # forever. Long agent sessions are squarely in that window.
+            "sudo systemctl disable --now unattended-upgrades.service "
+            "apt-daily.timer apt-daily-upgrade.timer "
+            "apt-daily.service apt-daily-upgrade.service 2>/dev/null; true",
+            30,
+        ),
+        (
+            "apt packages",
+            "sudo apt-get update -qq && "
+            "sudo apt-get install -y -qq python3-pip clang-18 cmake libomp-18-dev",
+            300,
+        ),
+        _uv_install_step(),
+        *_venv_steps(_UV_LINUX),
+        (
+            "perf counters",
+            "sudo sysctl -w kernel.perf_event_paranoid=1",
+            10,
+        ),
+    ]
+
+
+# Both tiers run bench/ and mcp_app/ out of the same uv-managed venv, same
+# path and same Python — see InstanceHandle.python.
+_UV_MAC = "/opt/homebrew/bin/uv"
+_UV_LINUX = "~/.local/bin/uv"
+_VENV_PYTHON = "~/venv/bin/python3"
+_PYTHON_VERSION = "3.12"
+
+
+def _uv_install_step() -> tuple[str, str, int]:
+    """Linux only — the mac tier gets uv from brew (see _macos_dep_steps).
+    astral's installer drops uv in ~/.local/bin, which (like brew's dir on the
+    mac tier) is not on a non-login SSH shell's PATH, hence _UV_LINUX."""
+    return (
+        "uv",
+        f"test -x {_UV_LINUX} || curl -LsSf https://astral.sh/uv/install.sh | sh",
+        120,
+    )
+
+
+def _venv_steps(uv: str) -> list[tuple[str, str, int]]:
+    """The two uv steps shared by every tier: create ~/venv, then install
+    requirements.txt into it. Both no-op once done, so they are safe to re-run."""
+    return [
+        (
+            "python venv",
+            f"test -x {_VENV_PYTHON} || {uv} venv ~/venv --python {_PYTHON_VERSION}",
+            300,
+        ),
+        (
+            "pip packages",
+            f"{uv} pip install --python {_VENV_PYTHON} -r ~/kernelshift/requirements.txt",
+            600,
+        ),
+    ]
+
+
+# Homebrew's own install path on Apple silicon. Not on a non-login shell's PATH,
+# so every step below names it explicitly rather than relying on shellenv.
+_BREW = "/opt/homebrew/bin/brew"
+
+
+def _macos_dep_steps() -> list[tuple[str, str, int]]:
+    """macOS counterpart of _linux_dep_steps.
+
+    Every Linux step fails here, and quietly (_install_deps only warns): no
+    apt-get/systemctl, and kernel.perf_event_paranoid is not a macOS sysctl.
+
+    The AMI already ships the Apple clang we compile with, so this installs
+    only what is missing: cmake for the dataset builds, and a uv-managed venv
+    (the system python is too old for requirements.txt, and is not what
+    InstanceHandle.python points at). Perf counters have no macOS equivalent —
+    perf_event_open is Linux-only — and timing.py already degrades without
+    them. Every step no-ops once done, so re-running provision() is safe.
+    """
+    return [
+        (
+            "homebrew",
+            f"command -v brew >/dev/null 2>&1 || test -x {_BREW} || "
+            'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL '
+            'https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
+            900,
+        ),
+        (
+            "brew packages",
+            # llvm provides llvm-objdump
+            f"{_BREW} list --formula cmake uv llvm >/dev/null 2>&1 || "
+            f"{_BREW} install cmake uv llvm",
+            900,
+        ),
+        *_venv_steps(_UV_MAC),
+    ]
+
+
+def _install_deps(handle: InstanceHandle) -> None:
+    """Install system and Python dependencies on the remote instance."""
+    steps = (
+        _macos_dep_steps()
+        if handle.instance_type.startswith("mac")
+        else _linux_dep_steps()
+    )
+    for label, cmd, timeout in steps:
+        print(f"[provision] Installing {label}...")
+        rc, _, err = handle.run(cmd, timeout=timeout)
+        if rc != 0:
+            print(f"[provision] WARNING: {label} failed: {err[:200]}")
+
+
+def provision(
+    label: str,
+    instance_type: str = "c7g.large",
+    dataset: str = "",
+    on_demand: bool = False,
+) -> InstanceHandle:
+    """
+    Run terraform apply to provision an instance under `label`. Blocks until
+    SSH is available, rsyncs source, installs deps, and runs dataset-specific
+    build steps.
+
+    Unconditional — always runs terraform apply (idempotent against unchanged
+    Terraform state) even if a reachable instance for this label is already up.
+
+    Args:
+        label: Arbitrary name identifying this instance — see module docstring
+            and default_label(). Must match LABEL_RE.
+        instance_type: EC2 instance type string (e.g. "c7g.large", "c8g.large", "c8g.xlarge")
+        dataset: Dataset name (e.g. "ncnn") — triggers build steps from dataset_builds.json.
+        on_demand: If True, provision on-demand instead of the default spot — AWS
+            won't reclaim the instance mid-run, at a higher hourly price.
+    """
+    _validate_label(label)
+    print(f"[provision] Provisioning {instance_type} (label={label!r}) via Terraform"
+          f"{' (on-demand)' if on_demand else ' (spot)'}...")
+
+    vars = [f"-var=on_demand={'true' if on_demand else 'false'}"]
+    with _tf_lock():
+        result = _tf(
+            "apply", "-auto-approve", *vars,
+            f'-target=aws_instance.labeled["{label}"]',
+            f'-target=null_resource.deploy["{label}"]',
+            extra_env=_tf_instance_env(label, instance_type),
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError("terraform apply failed")
+
+        outputs = _tf_output()
+    host = outputs["instance_public_ips"]["value"][label]
+    instance_id = outputs.get("instance_ids", {}).get("value", {}).get(label)
+    key_file = outputs.get("ssh_key_paths", {}).get("value", {}).get(label, "~/.ssh/id_rsa")
+    # ec2-user on Mac, ubuntu elsewhere — terraform/main.tf owns that split.
+    ssh_user = outputs.get("instance_ssh_users", {}).get("value", {}).get(label, "ubuntu")
+
+    handle = InstanceHandle(
+        host=host,
+        user=ssh_user,
+        key_file=key_file,
+        instance_type=instance_type,
+        instance_id=instance_id,
+    )
+
+    print(f"[provision] Instance ready at {host}, waiting for SSH...")
+    _wait_for_ssh(handle)
+
+    print(f"[provision] Rsyncing source to {host}:~/kernelshift/...")
+    handle.rsync_to(
+        str(REPO_ROOT),
+        "~/kernelshift",
+        paths=RSYNC_ALLOWLIST,
+    )
+
+    _install_deps(handle)
+    if dataset:
+        ensure_dataset_ready(handle, dataset)
+
+    _save_config(handle, label)
+    print(f"[provision] Done. SSH: ssh -i {key_file} {ssh_user}@{host}")
+    return handle
+
+
+def teardown(label: str | None = None):
+    """Run terraform destroy to terminate the instance(s).
+
+    `label` given: destroys just that one instance (-target-scoped), leaving
+    every other label's instance untouched. `label` omitted: tears down every
+    label currently recorded in eval_config.json, one at a time.
+    """
+    if label is None:
+        if not EVAL_CONFIG_PATH.exists():
+            print("[teardown] No eval_config.json found — nothing to tear down.")
+            return
+        config = json.loads(EVAL_CONFIG_PATH.read_text())
+        labels = list(config.get("instances", {}))
+        if not labels:
+            print("[teardown] No labels recorded — nothing to tear down.")
+            return
+        for l in labels:
+            teardown(l)
+        return
+
+    _validate_label(label)
+    instance_type = _recorded_instance_type(label) or "c7g.large"
+    print(f"[teardown] Destroying label={label!r}...")
+    with _tf_lock():
+        result = _tf(
+            "destroy", "-auto-approve",
+            f'-target=aws_instance.labeled["{label}"]',
+            f'-target=null_resource.deploy["{label}"]',
+            extra_env=_tf_instance_env(label, instance_type),
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"terraform destroy failed for label={label!r}")
+        if EVAL_CONFIG_PATH.exists():
+            _update_config(lambda config: config.get("instances", {}).pop(label, None))
+    print(f"[teardown] label={label!r} terminated.")
+
+
+def _recorded_instance_type(label: str) -> str | None:
+    """instance_type eval_config.json has on file for `label`, if any — needed
+    so a destroy's TF_VAR_instances still resolves this label's for_each key
+    even when the caller doesn't otherwise know its instance_type."""
+    if not EVAL_CONFIG_PATH.exists():
+        return None
+    config = json.loads(EVAL_CONFIG_PATH.read_text())
+    return config.get("instances", {}).get(label, {}).get("instance_type")
+
+
+def get_running_instance(label: str) -> InstanceHandle | None:
+    """
+    Return a handle to the running instance recorded under `label`, if any.
+    Reads from eval_config.json.
+    """
+    _validate_label(label)
+    if not EVAL_CONFIG_PATH.exists():
+        return None
+    config = json.loads(EVAL_CONFIG_PATH.read_text())
+    inst = config.get("instances", {}).get(label, {})
+    host = inst.get("host", "")
+    if not host:
+        return None
+    return InstanceHandle(
+        host=host,
+        user=inst.get("user", "ubuntu"),
+        key_file=inst.get("key_file", "~/.ssh/id_rsa"),
+        instance_type=inst.get("instance_type", "c7g.large"),
+    )
+
+
+# EC2 Mac boots far slower than the Linux tiers: a fresh mac-m4.metal took
+# 6m49s from LaunchTime to its first accepted SSH connection, so the 300s
+# Linux default times out every time — after terraform has created the
+# instance and billing has started.
+_SSH_WAIT_S = {"mac": 900}
+_SSH_WAIT_DEFAULT_S = 300
+
+
+def _ssh_wait_budget(handle: InstanceHandle) -> int:
+    for prefix, budget in _SSH_WAIT_S.items():
+        if handle.instance_type.startswith(prefix):
+            return budget
+    return _SSH_WAIT_DEFAULT_S
+
+
+def _wait_for_ssh(handle: InstanceHandle, max_wait: int | None = None, interval: int = 10):
+    max_wait = _ssh_wait_budget(handle) if max_wait is None else max_wait
+    deadline = time.time() + max_wait
+    while time.time() < deadline:
+        if _is_reachable(handle):
+            return
+        print(f"  Waiting for SSH... (retry in {interval}s)")
+        time.sleep(interval)
+    raise TimeoutError(f"SSH not available on {handle.host} after {max_wait}s")
+
+
+def _is_reachable(handle: InstanceHandle, attempts: int = 3, retry_wait: int = 10) -> bool:
+    """One `echo ok` probe per attempt. Reuse-vs-provision decisions pass
+    attempts>1 so one transient SSH blip can't send a healthy instance into
+    terraform."""
+    for attempt in range(attempts):
+        try:
+            rc, _, _ = handle.run("echo ok", timeout=15)
+            if rc == 0:
+                return True
+        except Exception:
+            pass
+        if attempt < attempts - 1:
+            time.sleep(retry_wait)
+    return False
+
+
+def _update_config(mutate):
+    """Read-modify-write eval_config.json under an exclusive file lock, so
+    concurrent bench_fleet.py processes (one per label) can't clobber each
+    other's writes with a stale read (each process only touches its own
+    label's key)."""
+    EVAL_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    EVAL_CONFIG_PATH.touch(exist_ok=True)
+    with open(EVAL_CONFIG_PATH, "r+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            text = f.read()
+            config = json.loads(text) if text.strip() else {}
+            mutate(config)
+            f.seek(0)
+            f.truncate()
+            f.write(json.dumps(config, indent=2))
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def _save_config(handle: InstanceHandle, label: str):
+    def mutate(config):
+        config.setdefault("instances", {})
+        config["instances"][label] = {
+            "host": handle.host,
+            "user": handle.user,
+            "key_file": handle.key_file,
+            "instance_type": handle.instance_type,
+        }
+    _update_config(mutate)
+
+
+def status():
+    """Print current instance status from eval_config.json."""
+    if not EVAL_CONFIG_PATH.exists():
+        print("No eval_config.json found. Run provision first.")
+        return
+    config = json.loads(EVAL_CONFIG_PATH.read_text())
+    for label, inst in config.get("instances", {}).items():
+        host = inst.get("host", "")
+        instance_type = inst.get("instance_type", "?")
+        if not host:
+            print(f"  {label} ({instance_type}): not provisioned")
+            continue
+        handle = InstanceHandle(host=host, user=inst["user"],
+                                key_file=inst["key_file"], instance_type=instance_type)
+        reachable = _is_reachable(handle)
+        status_str = "reachable" if reachable else "UNREACHABLE"
+        print(f"  {label} ({instance_type}): {host} — {status_str}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Provision/teardown Arm EC2 instances")
+    parser.add_argument("--instance", default=None,
+                        help="EC2 instance type override (e.g. c8g.xlarge). "
+                             "Defaults to ISA_INSTANCE_MAP value when --isa is set.")
+    parser.add_argument("--isa", help="ISA target (neon/sve/sve2/sme2)")
+    parser.add_argument("--label", default=None,
+                        help="Name identifying this instance — one per concurrently-desired "
+                             "instance. Default: f'{dataset}-{isa}' if --dataset given, else "
+                             "--isa, else the tier implied by --instance. Must match "
+                             f"{LABEL_RE.pattern}.")
+    parser.add_argument("--teardown", action="store_true", help="Destroy the instance")
+    parser.add_argument("--status", action="store_true", help="Show instance status")
+    parser.add_argument("--dataset", default="",
+                        help="Dataset to build after provisioning (e.g. ncnn). "
+                             "Default: skip — instance will lack that dataset's build artifacts.")
+    parser.add_argument("--on-demand", action="store_true",
+                        help="Provision on-demand instead of the default spot — AWS won't "
+                             "reclaim the instance mid-run, at a higher hourly price. Use "
+                             "when you want to start a long-run job.")
+    args = parser.parse_args()
+
+    if args.status:
+        status()
+    elif args.teardown:
+        # --label omitted: tear down every label eval_config.json knows about.
+        teardown(args.label)
+    else:
+        instance_type = args.instance or (ISA_INSTANCE_MAP.get(args.isa, "c7g.large") if args.isa else "c7g.large")
+        label = args.label or default_label(args.isa, args.dataset, instance_type)
+        # Reuse a reachable instance for this label if one's already up; otherwise
+        # provision a fresh one. To force a genuinely new instance, run with
+        # --teardown --label <label> first.
+        handle = get_running_instance(label)
+        if handle and _is_reachable(handle, attempts=3):
+            print(f"[provision] Reusing existing instance at {handle.host} (label={label!r})")
+            if args.dataset:
+                ensure_dataset_ready(handle, args.dataset)
+        else:
+            handle = provision(label, instance_type, dataset=args.dataset,
+                               on_demand=args.on_demand)
+        print(f"\nInstance handle: {handle}")
+        print(f"label={label} host={handle.host} user={handle.user} key_file={handle.key_file} "
+              f"instance_type={handle.instance_type}")

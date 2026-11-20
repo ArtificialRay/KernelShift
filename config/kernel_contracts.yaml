@@ -1,0 +1,287 @@
+# Kernel-session contracts shared across every evaluation path (eval/, mcp_app/,
+# skills/, bench/). Loaded once by contracts.py at the repo root.
+#
+# These are not per-machine settings and not secrets — they're naming/mapping
+# conventions that eval/ and every mcp_app/agent_tools/* KernelSession must
+# agree on. Keeping them here instead of duplicated Python literals keeps the
+# evaluation paths from silently disagreeing about e.g. which author a
+# dataset's baseline lives under.
+
+# Fixed filenames every dataset's harness/solution machinery relies on.
+contracts:
+  # The file every agent-submitted kernel is written to, regardless of dataset.
+  agent_kernel_filename: "kernel.cpp"
+  # The file an agent's unoptimized starting-point kernel is exposed as
+  # (its MCP resource name in mcp_app).
+  reference_scalar_filename: "reference-scalar-kernel.cpp"
+
+# dataset -> the Solution.author tag for that dataset's reference/starting-point
+# scalar kernel (what an agent begins from, NOT the speedup baseline below).
+reference_scalar_authors:
+  ncnn: "reference-scalar"
+  llama.cpp: "reference-scalar"
+  simd-loop: "reference-scalar"
+  kleidiai: "reference-scalar"
+
+# dataset -> the Solution.author tag for the competitive speedup baseline
+# (what time_speedup_geomean / cycle_speedup_geomean are computed against).
+# Used as-is for every dataset except where baseline_authors_by_isa below
+# declares a tier-specific override for the current session's isa.
+baseline_authors_default:
+  ncnn: "baseline-ncnn"
+  simd-loop: "baseline-simd-loop-sve"
+  llama.cpp: "baseline-llamacpp"
+  kleidiai: "baseline-kleidiai"
+
+# dataset -> isa -> baseline author, for datasets with a separate baseline
+# implementation per isa tier.
+baseline_authors_by_isa:
+  simd-loop:
+    sve2: "baseline-simd-loop-sve2"
+    sme2: "baseline-simd-loop-sme2"
+
+# bench/config.py's BenchmarkConfig/EvalConfig field defaults. baseline_author
+# intentionally isn't duplicated here — it reuses baseline_authors_default.ncnn above.
+eval_defaults:
+  warmup: 10
+  repeat: 50
+# "auto": Auto-tunes `inner_iters` per (definition, workload) to target `target_sample_ns`.
+#
+# A fixed `inner_iters` fails because kernel runtimes vary wildly (2.5 µs to 683 ms)
+# and iteration count alters cache behavior (e.g., 2.3x throughput on Apple silicon
+# at 1000 vs 1 iter due to hot working sets).
+#
+# To ensure fair comparisons, a candidate is timed with its baseline's
+# `inner_iters`.
+#
+# warmup, repeat, inner_iters and target_sample_ns together are the
+# timing protocol, the same for every target. Each trace records the protocol
+# it was measured with, and a baseline measured with another one is
+# re-collected instead of reused -- so changing a value here retires the
+# baselines on every instance.
+  inner_iters: auto
+  target_sample_ns: 10000000
+  cpu: 0
+  watchdog_s: 30.0
+  correctness_abs_tol: 1.0e-3
+  correctness_rel_tol: 1.0e-3
+  required_matched_ratio: 1.0
+  collect_perf_counters: true
+
+eval_op_type_overrides:
+  gemm:
+    abs_tol: 2.0e-3
+    rel_tol: 1.0e-2
+    required_matched_ratio: 0.98
+  moe:
+    abs_tol: 1.0e-2
+    rel_tol: 5.0e-2
+    required_matched_ratio: 0.95
+  mha:
+    abs_tol: 1.0e-3
+    rel_tol: 1.0e-3
+    required_matched_ratio: 0.98
+  gqa:
+    abs_tol: 5.0e-3
+    required_matched_ratio: 0.98
+  mla_prefill:
+    abs_tol: 5.0e-3
+    required_matched_ratio: 0.98
+  mla_decode:
+    # kv_lora_rank=512 up-projection contraction is 4x longer than mha/gqa's
+    # head_dim=128, accumulating more bf16 rounding noise (measured max_abs
+    # ~2.9e-2 across all 20 workloads; verified via intermediate-tensor dump
+    # against a from-scratch numpy reference -- not an algorithmic bug).
+    abs_tol: 3.0e-2
+    rel_tol: 1.0e-2
+    required_matched_ratio: 0.98
+
+# definition.name -> tolerance overrides, same shape as eval_op_type_overrides
+# above but scoped to one Definition instead of a whole op_type. Consulted
+# AFTER eval_op_type_overrides (higher priority) in
+# BenchmarkConfig.resolve_eval_config -- see bench/config.py.
+eval_definition_overrides:
+  conv2d_depthwise_f16_nhwc_kh3_kw3_s1_p1:
+    # abs_tol/rel_tol stay at the tight 1e-3 default -- only the match-ratio
+    # bar is lowered. This definition's KleidiAI SME2 baseline (f16
+    # throughout) showed matched_ratio 0.9672-0.9821 across all 14
+    # workloads on real hardware.
+    required_matched_ratio: 0.95
+  # SQNR floors come from calibrated workload tags. Requantized GEMM permits
+  # one-level rounding differences in fewer than 1% of elements.
+  gemm_qai8_qsi8cx_sme2_n256_k512:
+    abs_tol: 0.5
+    required_matched_ratio: 0.99
+  # NEON bf16 baseline's worst measured absolute error is 0.0865.
+  gemm_f32_bf16_n512_k512:
+    abs_tol: 0.09
+    rel_tol: 1.0e-3
+    required_matched_ratio: 1.0
+  # SME2 bf16 baseline's worst measured absolute error is 0.0835.
+  gemm_bf16_n512_k512:
+    abs_tol: 0.09
+    rel_tol: 1.0e-3
+    required_matched_ratio: 1.0
+  # Integer accumulation differs from the reference only by fp32 rounding.
+  gemm_u8_f32_sme2_n256_k512:
+    abs_tol: 1.0e-3
+    rel_tol: 1.0e-5
+    required_matched_ratio: 1.0
+  # FP32 GEMV reduction over n (up to 521K). FP32 accumulation deviates from FP64 ref by ~1.4e-3 rel.
+  loop_216:
+    abs_tol: 2.0e-3
+    rel_tol: 1.0e-2
+  loop_220:
+    abs_tol: 2.0e-3
+    rel_tol: 1.0e-2
+
+# isa -> compile flags + the EC2 instance type that satisfies it.
+# "portable"/"neon" both compile to plain armv8-a; portable's "no hand-written
+# SIMD" constraint is a prompt-level rule (see eval/evaluator.py's ISA-ablation
+# mode), not a compile flag, so it isn't represented here.
+isa:
+  neon:
+    march: "-march=armv8-a"
+    features: []
+    labels: ["aarch64-neon"]
+    instance_type: "c7g.xlarge"
+  sve:
+    march: "-march=armv8.2-a+sve"
+    # dotprod/i8mm are orthogonal CPU features (not a higher isa tier) —
+    # confirmed present in /proc/cpuinfo's Features line (asimddp, i8mm/
+    # svei8mm) on a real c7g.xlarge. vl256 marks Graviton3's SVE
+    # implementation as 256-bit wide.
+    features: ["sve", "dotprod", "i8mm", "vl256"]
+    labels: ["graviton3", "aarch64-sve"]
+    instance_type: "c7g.xlarge"
+  sve2:
+    march: "-march=armv9-a+sve2"
+    # sve2 is a strict superset of sve, so a solution declaring
+    # isa_features=["sve"] must be satisfiable under sve2 too. dotprod/i8mm
+    # confirmed present on a real c8g.xlarge the same way as sve above.
+    # No vl256: Graviton4's SVE2 measures 128-bit wide on real hardware.
+    features: ["sve", "sve2", "dotprod", "i8mm"]
+    labels: ["graviton4", "aarch64-sve2"]
+    instance_type: "c8g.xlarge"
+  sme2:
+    # No Graviton generation implements SME (G4/G5 are SVE2 only; SME is
+    # optional in Armv9.2-A and AWS did not take it), so this tier needs Apple
+    # silicon. Measured on EC2 mac-m4.metal, Apple clang 21:
+    #   -mcpu=apple-m4            plain SVE does not compile   <- safe
+    #   -march=armv9-a+sme2       compiles, then SIGILL
+    #   -march=armv9-a+sve2+sme2  compiles, then SIGILL
+    # M4's SME is a coprocessor: SME2 is present but the cores do not run
+    # SVE/SVE2 outside streaming mode. Dropping "+sve2" is not enough because
+    # armv9-a already implies SVE — only -mcpu keeps it out of reach, and it
+    # fails at compile time, which an agent can act on, unlike a bare SIGILL.
+    # features therefore stops at sme2: the cumulative rule does not extend
+    # here, sme2 does NOT imply sve2.
+    march: "-mcpu=apple-m4"
+    features: ["sme2"]
+    labels: ["apple-m4", "aarch64-sme2"]
+    instance_type: "mac-m4.metal"
+
+# Disallowed-source-pattern policy for agent-submitted kernel.cpp, consumed
+# by mcp_app's compile() tool (mcp_app/agent_tools/base.py::
+# _disallowed_source_patterns()). Each key below is one restriction
+# dimension; add a new dimension by adding a new key here and one line in
+# _disallowed_source_patterns(), nothing else needs to change.
+disallowed_source_patterns:
+  # Always-on baseline: agent kernels are evaluated as single-core
+  # SIMD/assembly — threading/parallelism APIs are forbidden regardless of
+  # op_type or isa.
+  default:
+    - '#\s*pragma\s+omp'
+    - '#\s*include\s*[<"]omp\.h[>"]'
+    - '#\s*include\s*[<"]thread[>"]'
+    - '#\s*include\s*[<"]pthread\.h[>"]'
+    - 'std::thread'
+    - 'std::async'
+    - 'std::jthread'
+    - 'pthread_create'
+    - 'omp_set_num_threads'
+    - 'omp_get_num_threads'
+    - 'omp_get_thread_num'
+    - '\bfork\s*\('
+    - '\bvfork\s*\('
+    - '\bclone\s*\('
+  # op_type -> pattern list REPLACING (not adding to) `default` for that
+  # op_type. Empty for now.
+  by_op_type: {}
+  # isa -> pattern list ADDED ON TOP of `default` (and any by_op_type
+  # override) when a session's isa matches. SVE/SVE2 intrinsics already fail
+  # to compile under "portable" (-march=armv8-a has no +sve target feature)
+  # — this list exists because NEON does NOT fail: NEON is AArch64 baseline,
+  # so an agent's NEON intrinsics would otherwise compile and run silently
+  # under "portable", contradicting the whole point of that ISA tier (agent
+  # optimizes via plain, compiler-vectorizable C++ only).
+  by_isa:
+    portable:
+      - '#\s*include\s*[<"]arm_neon\.h[>"]'
+      - '#\s*include\s*[<"]arm_sve\.h[>"]'
+      - '\bfloat(16|32|64)x[0-9]+x?[0-9]*_t\b'
+      - '\bv(ld|st|add|mul|fma|mla|mls|sub|dup)[a-z0-9_]*_[fsu](8|16|32|64)\b'
+  # dataset -> pattern list ADDED ON TOP of everything above.
+  by_dataset:
+    # The llama.cpp harness links ggml, so a kernel that calls ggml's own routine
+    # (e.g. ggml_vec_dot_q5_K_q8_K) compiles, passes and scores ~1.00x: it submits the
+    # baseline. It also cannot be spliced into llama.cpp (the symbol does not resolve
+    # under dlopen). Headers/types are fine; calling ggml functions is not.
+    # The second pattern matches ggml's (de)quantize_row_<type>[_ref|_generic] names
+    # exactly, so a kernel's own helpers (quantize_row_q8_neon, quantize_row_bf16_to_q8)
+    # are not caught. ggml's f16/bf16 row conversions are ggml_*, caught by the first.
+    llama.cpp:
+      - '\bggml_[A-Za-z0-9_]*\s*\('
+      - '\b(de)?quantize_row_(q[0-9]_[0-9K]|iq[0-9]_[a-z]+|tq[0-9]_0|mxfp4|nvfp4)(_ref|_generic)?\s*\('
+
+# How long the MCP server lets one evaluate() run before it kills the isolated
+# subprocess (bench/runtime/isolation.py), and how much longer every harness's
+# MCP client must wait for a tool call than that. A client that gives up first
+# leaves the server's evaluate running while the agent starts its next one, so
+# two measurements share the pinned core and the later speedup comes out about
+# 2x low. test_scripts/harness_adapters/ write evaluate_s + client_margin_s into
+# each harness's MCP config and refuse to start a run with a shorter wait
+# (contracts.check_client_tool_timeout).
+mcp_tool_timeouts:
+  evaluate_s: 1200
+  client_margin_s: 300
+
+# eval/evaluator.py::run_agentic_eval's litellm turn loop — consumed via
+# contracts.AGENT_LOOP_DEFAULTS.
+tool_call_loop:
+  # litellm.completion()'s own timeout — large reasoning responses over
+  # OpenRouter can exceed litellm's 600s default.
+  completion_timeout_s: 1200
+  temperature: 0.2
+  # Model strings (matched as a substring) that reject an explicit
+  # `temperature` kwarg outright — skip setting it for these rather than
+  # relying solely on the runtime BadRequestError-drop-and-retry fallback.
+  models_without_temperature: ["opus-4-7", "opus-4-8"]
+  # Model strings (substring match) that must NOT be sent tool_choice=required,
+  # so they can emit text and thinking blocks in the same turn (reason, not
+  # only call tools).
+  models_without_forced_tool_use: ["claude", "anthropic/"]
+  # Model strings (substring match) that 400 outright on any tool-calling
+  # request through /v1/chat/completions when reasoning is enabled
+  # (confirmed empirically: "Function tools with reasoning_effort are not
+  # supported for gpt-5.6-luna in /v1/chat/completions. To use function
+  # tools, use /v1/responses or set reasoning_effort to 'none'."). Routed
+  # through litellm.responses() instead (eval/llm_call.py) rather than
+  # worked around with reasoning_effort="none".
+  models_using_responses_api: ["gpt-5.6-luna"]
+  # Retry budget for rate-limit/server-error responses (exponential backoff:
+  # retry_base_wait_s * 2**attempt).
+  retry_max_attempts: 6
+  retry_base_wait_s: 30
+  # eval/mcp_client.py's MCP session — consumed via contracts.MCP_CLIENT_DEFAULTS.
+  # Generous timeouts: evaluate()/compile() run a full build+timed-repeat pass
+  # and can legitimately take minutes; mcp_app/server.py pings the MCP session
+  # every 120s while a call is in flight specifically so a slow call doesn't
+  # look dead (server.py's TOOL_CALL_PING_INTERVAL_S). tool_call_timeout_s
+  # must be at least mcp_tool_timeouts.evaluate_s + client_margin_s.
+  mcp_client:
+    connect_timeout_s: 60
+    tool_call_timeout_s: 1500
+    resource_call_timeout_s: 60
+    compile_timeout_s: 1500
+    disassemble_timeout_s: 60

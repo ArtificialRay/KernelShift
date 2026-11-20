@@ -1,0 +1,177 @@
+# KernelShift
+
+![KernelShift overview](docs/figures/overview.png)
+
+A benchmark environment for LLM agents that write optimized AArch64 SIMD kernels (NEON, SVE,
+SVE2, SME2). Each task is a kernel with a reference implementation, workloads
+taken from real models, and an expert implementation to beat. The agent compiles,
+tests and profiles its kernel on the target machine through MCP tools. A kernel
+scores only if it is correct on every workload, and its score is the speedup over the
+expert implementation.
+
+| Source | Kernels | Definitions | Evaluation set |
+|---|---|--:|--:|
+| [ncnn](https://github.com/Tencent/ncnn) | Conv2D, depthwise Conv2D, pooling | 23 | 23 |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) | GEMM, MoE, attention (MHA, GQA, MLA), RMSNorm | 26 | 26 |
+| [Arm SIMD Loops](https://gitlab.arm.com/architecture/simd-loops) | standalone loops `loop_001` … `loop_223` | 47 | 24 |
+| [KleidiAI](https://gitlab.arm.com/kleidi/kleidiai) | GEMM, convolution and softmax micro-kernels | 30 | 6 SVE + 20 SME2 |
+| End-to-end (llama.cpp) | quantized GEMMs of Qwen3.5-4B and Llama-3.1-8B-Instruct | 18 | – |
+| **Total** | | **144** | **99** |
+
+The tasks live in the Hugging Face dataset
+[`arm-bench/KernelShift`](https://huggingface.co/datasets/arm-bench/KernelShift).
+Its `expected_sets.json` lists the evaluation set, and its `TASKS.md` lists, for every
+definition, the expert baseline on each hardware tier and whether it runs there. The
+end-to-end definitions are used to splice agent kernels into llama.cpp
+([`e2e/README.md`](e2e/README.md)).
+
+## Install
+
+Python 3.12 or later, and `clang++` (Apple clang works on macOS).
+
+```bash
+git clone https://github.com/ArtificialRay/KernelShift && cd KernelShift
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+hf download arm-bench/KernelShift --repo-type dataset --local-dir bench-trace
+```
+
+Every tool reads the dataset from `bench-trace/`. Check that it loaded:
+
+```console
+$ python -m bench.cli summary
+{
+  "definitions": 144,
+  "solutions": 403,
+  "workloads": 1968,
+  ...
+```
+
+## Run one kernel locally
+
+`bench.cli` compiles a solution, checks it against the reference on every
+workload and times it. No AWS account or agent is involved.
+
+```console
+$ python -m bench.cli bench --definition loop_001 --solution reference-scalar_loop_001 --dataset simd-loop --isa sve
+  6bfe094b  PASSED  min=9.08us  p5=9.15us  max_abs=0.00e+00  max_rel=0.00e+00
+  06735e72  PASSED  min=43.30us  p5=43.82us  max_abs=0.00e+00  max_rel=0.00e+00
+  ...
+```
+
+Kernels run only on hardware that has their instructions: scalar and NEON code on
+any AArch64 machine, SVE on Graviton3, SVE2 on Graviton4, SME2 on Apple M4. An SVE
+kernel run on a Mac fails with `RUNTIME_ERROR ... SIGILL`.
+`python -m bench.cli list-definitions` and `list-solutions` show what there is to run.
+
+## Add your kernel
+
+A task is four artifacts in `bench-trace/`:
+
+- **Definition**: shapes, dtypes and a Python reference;
+- **Workloads**: concrete sizes and how to generate the inputs;
+- **Reference-scalar solution**: plain C++, the agent's starting point;
+- **Baseline solution**: the library's own kernel, which the agent has to beat.
+
+`kgen` is the CLI that discovers, builds and checks these artifacts for a new kernel.
+The easiest way to use it is to ask a coding agent to follow the `gen-*` skills in
+[`.claude/skills/`](.claude/skills/), which drive the `kgen` commands.
+
+Every command, the loader and plugin contracts and the checks: [`kgen/README.md`](kgen/README.md).
+
+## Run an agent
+
+`test_scripts/bench_fleet.py` starts an EC2 instance for the ISA, runs the agent on
+every definition you name, and copies the results back:
+
+```bash
+python3 test_scripts/bench_fleet.py --harness claude-code --model claude-opus-4-8 \
+    --dataset simd-loop --isa sve --definitions "loop_001 loop_002"
+```
+
+| `--isa` | Instance |
+|---|---|
+| `neon`, `sve` | c7g.xlarge (Graviton3) |
+| `sve2` | c8g.xlarge (Graviton4) |
+| `sme2` | mac-m4.metal (Apple M4) |
+
+`--dataset` is `ncnn`, `simd-loop`, `llama.cpp` or `kleidiai`. Without
+`--definitions` every definition of the dataset runs. `--max-iterations` (default 40)
+caps the compile, evaluate and disassemble calls per kernel. `--help` lists the rest.
+
+| Harness | `--harness` | Needs |
+|---|---|---|
+| Claude Code | `claude-code` | `claude` CLI, logged in |
+| Codex | `codex` | `codex` CLI, logged in |
+| nanobot | `nanobot` | `nanobot` CLI with a `~/.nanobot/workspace`, an API key in `skills/nanobot/nanobot-kernel-session/config.json` |
+| Built-in tool-call loop | `own` | `--model` (any [litellm](https://docs.litellm.ai/) model id) |
+
+### AWS setup (once)
+
+1. An AWS account in `us-west-2` (the AMIs are pinned to that region), and an
+   existing security group that allows SSH.
+2. `~/.ssh/id_rsa` and `~/.ssh/id_rsa.pub`; Terraform imports the public key into EC2
+   itself.
+3. `cp provisioning/workspaces.json.example provisioning/workspaces.json` and fill in
+   the one entry: `aws_region` and `security_group_id` are required; `account_id`
+   (Terraform then refuses credentials for any other account), `namespace` and
+   `aws_profile` are optional.
+4. `terraform -chdir=terraform init`
+
+Instances are spot by default (`--on-demand` to change). `bench_fleet.py` tears its
+instance down when the run completes, but not when the run fails or is interrupted.
+It also keeps a Linux instance's self-shutdown armed, so the instance shuts itself
+down within about 2 hours of the driver stopping (`--watchdog-minutes`); an instance
+started another way (`launch_session.py`, `provision.py`) has no such guard.
+`python3 provisioning/provision.py --teardown` removes instances right away.
+
+An M4 needs a Dedicated Host, which AWS bills for at least 24 hours. Provisioning
+never allocates one. Allocate it yourself, in an availability zone that has a default
+subnet, and release it when done:
+
+```bash
+aws ec2 allocate-hosts --region us-west-2 --instance-type mac-m4.metal --availability-zone <az> --quantity 1
+aws ec2 release-hosts --region us-west-2 --host-ids <host-id>
+```
+
+### Results
+
+Each kernel gets a directory `agent-runs-<author>/<definition>/`, where `<author>` is
+`<harness>-<model>-<isa>`:
+
+- `v1.cpp`, `v2.cpp`, …: every version the agent compiled;
+- `trajectory.jsonl`: one line per tool call. An `evaluate` that passed every workload
+  carries `time_speedup_geomean`, the geometric mean over workloads of
+  baseline time / kernel time.
+
+A kernel's result is the highest `time_speedup_geomean` among its passing evaluates. The
+version saved as its solution (the trajectory's last `submit` turn) is the one with the
+highest `cycle_speedup_geomean` instead (time where there are no cycle counters, as on the
+M4), so it can be a different version. `--wandb` also logs each run to Weights & Biases
+(`pip install wandb` first; fields described in [`analysis/README.md`](analysis/README.md)).
+
+On Linux, the external CLI harnesses (`claude-code`, `codex`, `nanobot`) run in a
+per-job **Bubblewrap filesystem sandbox** by default; install `bwrap` on the driver
+host. With the sandbox on, install the `nanobot` CLI globally, not in the repo's
+environment. `own` runs inside the driver process, so the sandbox is off for it and
+`--file-sandbox bwrap` is rejected.
+
+## Other ways to use it
+
+- **Your own agent harness:** `python3 skills/launch/launch_session.py launch --isa <isa> --dataset <dataset> --author <name>`
+  starts the MCP server on an instance and prints its endpoint. It passes no
+  `--max-iterations`, so the session has no tool-call cap. Tools:
+  [`mcp_app/README.md`](mcp_app/README.md); commands: [`skills/README.md`](skills/README.md).
+- **Inside llama.cpp:** splice agent GEMM kernels into llama.cpp and measure tokens/s and
+  perplexity: [`e2e/README.md`](e2e/README.md).
+
+## More documentation
+
+- [`docs/configuration.md`](docs/configuration.md): every config file, environment
+  variable and the timing protocol
+- [`eval/README.md`](eval/README.md): the built-in agent loop
+- [`CLAUDE.md`](CLAUDE.md): how the code is organized
+
+## License
+
+See [`LICENSE.md`](LICENSE.md).

@@ -1,0 +1,106 @@
+"""InstanceHandle — self-contained SSH/rsync helper.
+
+Pure SSH client: given host/user/key_file for an instance that's already
+up, run commands and move files on it. No Terraform logic or config-file
+I/O (that's provisioning/provision.py's job), so scripts that only talk to
+an existing instance can import this without provision.py.
+
+skills/launch/remote.py's RemoteTarget is a deliberate duplicate: that skill
+imports nothing from eval/ or provisioning/.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass
+class InstanceHandle:
+    host: str
+    user: str
+    key_file: str
+    instance_type: str
+    instance_id: str | None = None
+
+    @property
+    def python(self) -> str:
+        """Interpreter to run bench/ and mcp_app/ with on THIS instance.
+
+        Every tier runs out of the same uv-managed venv that
+        provisioning/provision.py::_install_deps creates — macOS's system
+        python3 (3.9.6) is too old for requirements.txt and Ubuntu's is
+        externally managed, so neither is used. Same path on every instance
+        type: callers that don't know the type (skills/launch, bench_fleet)
+        just hardcode it.
+        """
+        return "~/venv/bin/python3"
+
+    def ssh_base_args(self) -> list[str]:
+        key = os.path.expanduser(self.key_file)
+        return [
+            "-i", key,
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "ConnectTimeout=10",
+        ]
+
+    def ssh_cmd(self, remote_cmd: str) -> list[str]:
+        return ["ssh"] + self.ssh_base_args() + [f"{self.user}@{self.host}", remote_cmd]
+
+    def run(self, remote_cmd: str, timeout: int = 120) -> tuple[int, str, str]:
+        result = subprocess.run(
+            self.ssh_cmd(remote_cmd),
+            capture_output=True, text=True, timeout=timeout,
+        )
+        return result.returncode, result.stdout, result.stderr
+
+    def upload_file(self, local_path: str, remote_path: str):
+        key = os.path.expanduser(self.key_file)
+        subprocess.run([
+            "scp",
+            "-i", key,
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            str(local_path),
+            f"{self.user}@{self.host}:{remote_path}",
+        ], check=True, capture_output=True)
+
+    def rsync_to(self, local_dir: str, remote_dir: str, paths: list[str]):
+        """Sync only `paths` (repo-root-relative files/dirs) from local_dir into
+        remote_dir, one rsync per path with --delete. Allow-list, not a deny-list:
+        anything else on the remote (results/, agent-runs/, ...) is never touched,
+        and nothing stale lingers the way it would behind an rsync --exclude.
+        """
+        # Create each path's parent too: entries may be nested (e.g.
+        # "bench-trace/definitions") and rsync does not create missing
+        # intermediate directories. Unquoted so remote_dir's "~" still
+        # expands (quoting would make a directory literally named "~").
+        parents = sorted({f"{remote_dir}/{rel}".rsplit("/", 1)[0] for rel in paths})
+        self.run("mkdir -p " + " ".join(dict.fromkeys([remote_dir, *parents])))
+        key = os.path.expanduser(self.key_file)
+        ssh_opt = f"ssh -i {key} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        for rel in paths:
+            local_path = Path(local_dir) / rel
+            cmd = ["rsync", "-avz", "--delete", "-e", ssh_opt]
+            if local_path.is_dir():
+                cmd += [str(local_path) + "/", f"{self.user}@{self.host}:{remote_dir}/{rel}/"]
+            else:
+                cmd += [str(local_path), f"{self.user}@{self.host}:{remote_dir}/{rel}"]
+            subprocess.run(cmd, check=True, capture_output=True)
+
+    def rsync_from(self, remote_path: str, local_dir: str, excludes: list[str] | None = None):
+        key = os.path.expanduser(self.key_file)
+        cmd = [
+            "rsync", "-avz",
+            "-e", f"ssh -i {key} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null",
+        ]
+        for exc in (excludes or []):
+            cmd += ["--exclude", exc]
+        cmd += [f"{self.user}@{self.host}:{remote_path}", str(local_dir) + "/"]
+        subprocess.run(cmd, check=True)
+
+
+__all__ = ["InstanceHandle"]

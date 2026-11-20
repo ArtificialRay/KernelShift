@@ -1,0 +1,40 @@
+"""resolve_tools — dataset-to-KernelSession dispatch.
+
+A new dataset needs only one new entry here.
+"""
+
+from __future__ import annotations
+
+from typing import Type
+
+from bench.data.solution import SupportedDatasets
+
+from .base import KernelSession
+from .kleidiai import KleidiaiKernelSession
+from .llama_cpp import LlamaCppKernelSession
+from .ncnn import NCNNKernelSession
+from .simd_loop import SIMDLoopKernelSession
+
+_TOOLS: dict[str, Type[KernelSession]] = {
+    SupportedDatasets.NCNN.value: NCNNKernelSession,
+    SupportedDatasets.SIMD_LOOP.value: SIMDLoopKernelSession,
+    SupportedDatasets.LLAMA_CPP.value: LlamaCppKernelSession,
+    SupportedDatasets.KLEIDIAI.value: KleidiaiKernelSession,
+}
+
+
+def resolve_tools(dataset: str) -> Type[KernelSession]:
+    """Return the KernelSession class for the given dataset string.
+
+    Raises KeyError with a clear message if the dataset is unknown.
+    """
+    cls = _TOOLS.get(dataset)
+    if cls is None:
+        raise KeyError(
+            f"No KernelSession registered for dataset {dataset!r}. "
+            f"Available: {sorted(_TOOLS)}"
+        )
+    return cls
+
+
+__all__ = ["resolve_tools"]

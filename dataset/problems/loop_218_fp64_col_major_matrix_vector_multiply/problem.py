@@ -1,0 +1,67 @@
+"""
+loop_218: FP64 col-major matrix-vector multiply
+
+Purpose: Use of fp64 MLA instruction
+
+ISA target: SME2 on Arm Neoverse V2 (AWS Graviton4, SME2 128-bit)
+"""
+
+METADATA = {
+    "id": "loop_218",
+    "num": "218",
+    "name": "FP64 col-major matrix-vector multiply",
+    "description": "Multiply an FP64 matrix by an FP64 vector (column-major GEMV)",
+    "isa_target": "sme2",
+    "instance_type": "c8g.large",
+    "dir_name": "loop_218_fp64_col_major_matrix_vector_multiply",
+    "tags": ['sme2', 'streaming', 'matmul', 'fp64'],
+}
+
+# Data struct definition — parsed by plugins/simd_loop/plugin.py
+STRUCT_DEF = r"""
+struct loop_218_data {
+  uint64_t m;
+  uint64_t n;
+  float64_t *restrict a;
+  float64_t *restrict x;
+  float64_t *restrict b;
+};
+"""
+
+# Scalar reference implementation
+SCALAR_CODE = r"""
+#define LOOP_ATTR
+#define OUTER_LOOP_ATTR
+"""
+
+# Prompt template
+SYSTEM_PROMPT = """You are an expert AArch64 SIMD programmer. Your task is to write an optimized
+implementation of a given loop kernel for {isa_desc}.
+Preserve the exact function signature. The `res` checksum field must match
+the scalar output. Output only the C function — no markdown, no explanation.
+"""
+
+USER_PROMPT_TEMPLATE = """Problem: FP64 col-major matrix-vector multiply
+Purpose: Use of fp64 MLA instruction
+Target: {isa_upper} on {isa_desc}
+
+Struct definition:
+```c
+{struct_def}
+```
+
+Scalar implementation to optimize:
+```c
+{scalar_code}
+```
+
+Write an optimized {isa_upper} implementation. Output only the C function.
+"""
+
+# Input sizes for edge-case correctness testing.
+# Empty list = skip (loop uses non-SIZE parameters or fixed dimensions).
+EDGE_SIZES = []
+
+# Input sizes for performance measurement.
+# Scored against the largest size. Empty list = skip.
+PERF_SIZES = []

@@ -1,0 +1,210 @@
+"""Benchmark + evaluation configuration (the shared leaf module).
+
+Both config classes live here so `bench/benchmark.py` (orchestration) and
+`bench/evaluators/` (evaluation protocol) can each depend on config without
+depending on each other.
+
+- `BenchmarkConfig` — the run-level knobs (what to run + how to evaluate).
+  Call `BenchmarkConfig.resolve_eval_config(definition)` to get the evaluator
+  knobs for a specific definition, including any per-op-type overrides.
+- `EvalConfig` — the evaluator-facing subset, fully resolved (no None fields).
+- `EvalOverride` — sparse per-op-type overrides (None = inherit from BenchmarkConfig).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Union
+
+from contracts import BASELINE_AUTHORS, EVAL_DEFAULTS, EVAL_DEFINITION_OVERRIDES, EVAL_OP_TYPE_OVERRIDES
+
+# ── Defaults (single source of truth: config/kernel_contracts.yaml) ───────────
+
+# ncnn only: a config that names no baseline scores every dataset against this. Other datasets must pass their own.
+DEFAULT_BASELINE_AUTHOR = BASELINE_AUTHORS["ncnn"]
+DEFAULT_WARMUP = EVAL_DEFAULTS["warmup"]
+DEFAULT_REPEAT = EVAL_DEFAULTS["repeat"]
+DEFAULT_INNER_ITERS = EVAL_DEFAULTS["inner_iters"]          # int, or "auto"
+DEFAULT_TARGET_SAMPLE_NS = EVAL_DEFAULTS["target_sample_ns"]
+DEFAULT_CPU = EVAL_DEFAULTS["cpu"]
+DEFAULT_WATCHDOG_S = EVAL_DEFAULTS["watchdog_s"]
+DEFAULT_CORRECTNESS_ABS_TOL = EVAL_DEFAULTS["correctness_abs_tol"]
+DEFAULT_CORRECTNESS_REL_TOL = EVAL_DEFAULTS["correctness_rel_tol"]
+DEFAULT_REQUIRED_MATCHED_RATIO = EVAL_DEFAULTS["required_matched_ratio"]
+DEFAULT_COLLECT_PERF_COUNTERS = EVAL_DEFAULTS["collect_perf_counters"]
+
+@dataclass
+class EvalOverride:
+    """Sparse per-op-type tolerance overrides for BenchmarkConfig.op_type_config.
+
+    None fields are skipped during merge — only set fields override the
+    BenchmarkConfig base values.
+    """
+
+    abs_tol: Optional[float] = None
+    rel_tol: Optional[float] = None
+    required_matched_ratio: Optional[float] = None
+    min_sqnr_db: Optional[float] = None
+
+
+# Per-op-type tolerance overrides — see eval_op_type_overrides in
+# config/kernel_contracts.yaml for the rationale (fp32 reduction order drift
+# in gemm/moe/mha baselines).
+DEFAULT_OP_TYPE_CONFIG: Dict[str, "EvalOverride"] = {
+    op: EvalOverride(**cfg) for op, cfg in EVAL_OP_TYPE_OVERRIDES.items()
+}
+
+# Per-definition tolerance overrides — see eval_definition_overrides in
+# config/kernel_contracts.yaml. Scoped to one Definition.name instead of a
+# whole op_type
+DEFAULT_DEFINITION_CONFIG: Dict[str, "EvalOverride"] = {
+    name: EvalOverride(**cfg) for name, cfg in EVAL_DEFINITION_OVERRIDES.items()
+}
+
+
+@dataclass
+class BenchmarkConfig:
+    baseline_author: str = DEFAULT_BASELINE_AUTHOR
+    definitions: Optional[List[str]] = None
+    """If set, only run these definition names."""
+    solutions: Optional[List[str]] = None
+    """If set, only run these solution names."""
+    warmup: int = DEFAULT_WARMUP
+    repeat: int = DEFAULT_REPEAT
+    inner_iters: Union[int, str] = DEFAULT_INNER_ITERS
+    target_sample_ns: int = DEFAULT_TARGET_SAMPLE_NS
+    cpu: Optional[int] = DEFAULT_CPU
+    abs_tol: float = DEFAULT_CORRECTNESS_ABS_TOL
+    rel_tol: float = DEFAULT_CORRECTNESS_REL_TOL
+    required_matched_ratio: float = DEFAULT_REQUIRED_MATCHED_RATIO
+    min_sqnr_db: float = 20.0
+    """Absolute SQNR floor (dB) for definitions tagged `correctness:sqnr` (e.g. q8_0
+    MoE, whose real quantized arithmetic can't match a full-precision reference on
+    an elementwise tolerance). ggml scores ~44 dB; garbage/overflow ~0 dB. Used only
+    when the workload carries no `baseline_sqnr_db` tag -- see sqnr_margin_db."""
+    sqnr_margin_db: float = 1.0
+    """How far below the *baseline's own* SQNR a candidate may fall, when the workload
+    carries a `baseline_sqnr_db` tag (written by kgen/calibrate.py).
+    A fixed absolute floor is the wrong gate for a quantized kernel: ggml's own q4_K
+    arithmetic sits near 44 dB on real activations, so a 20 dB floor accepts a kernel
+    that throws away 24 dB of signal the reference keeps. An agent kernel that did
+    exactly that cost 3.9 perplexity end to end."""
+    op_type_config: Dict[str, EvalOverride] = field(
+        default_factory=lambda: dict(DEFAULT_OP_TYPE_CONFIG)
+    )
+    """Per-op-type tolerance overrides keyed by definition.op_type. Defaults to
+    DEFAULT_OP_TYPE_CONFIG (loosened tolerance for gemm/moe/mha float reductions);
+    pass an explicit dict (e.g. {}) to opt out."""
+    definition_config: Dict[str, EvalOverride] = field(
+        default_factory=lambda: dict(DEFAULT_DEFINITION_CONFIG)
+    )
+    """Per-definition tolerance overrides keyed by definition.name. Defaults to
+    DEFAULT_DEFINITION_CONFIG; consulted after op_type_config (higher priority),
+    so a definition-specific entry wins over its op_type's. Pass an explicit
+    dict (e.g. {}) to opt out."""
+    watchdog_s: float = DEFAULT_WATCHDOG_S
+    collect_perf_counters: bool = DEFAULT_COLLECT_PERF_COUNTERS
+
+    def resolve_eval_config(self, definition=None) -> "EvalConfig":
+        """Define/overwrite evaluation config from lowest → highest priority: BenchmarkConfig base →
+        op_type_config[definition.op_type] → definition_config[definition.name].
+
+        Higher priority wins. Each layer is only consulted when definition is
+        provided and that layer's dict is non-empty.
+        """
+        atol = self.abs_tol
+        rtol = self.rel_tol
+        ratio = self.required_matched_ratio
+        sqnr = self.min_sqnr_db
+        if definition is not None:
+            for layer, key in (
+                (self.op_type_config, definition.op_type),
+                (self.definition_config, definition.name),
+            ):
+                if not layer:
+                    continue
+                override = layer.get(key)
+                if override is None:
+                    continue
+                if override.abs_tol is not None:
+                    atol = override.abs_tol
+                if override.rel_tol is not None:
+                    rtol = override.rel_tol
+                if override.required_matched_ratio is not None:
+                    ratio = override.required_matched_ratio
+                if override.min_sqnr_db is not None:
+                    sqnr = override.min_sqnr_db
+        return EvalConfig(
+            abs_tol=atol,
+            rel_tol=rtol,
+            required_matched_ratio=ratio,
+            min_sqnr_db=sqnr,
+            sqnr_margin_db=self.sqnr_margin_db,
+            warmup=self.warmup,
+            repeat=self.repeat,
+            inner_iters=self.inner_iters,
+            target_sample_ns=self.target_sample_ns,
+            cpu=self.cpu,
+            watchdog_s=self.watchdog_s,
+            collect_perf_counters=self.collect_perf_counters,
+            baseline_author=self.baseline_author,
+        )
+
+
+@dataclass(frozen=True)
+class EvalConfig:
+    """Fully resolved evaluator knobs.
+
+    Produced by BenchmarkConfig.resolve_eval_config(definition). All fields are
+    concrete — no None values, no op_type lookup needed downstream.
+    """
+
+    # correctness
+    abs_tol: float = DEFAULT_CORRECTNESS_ABS_TOL
+    rel_tol: float = DEFAULT_CORRECTNESS_REL_TOL
+    required_matched_ratio: float = DEFAULT_REQUIRED_MATCHED_RATIO
+    min_sqnr_db: float = 20.0
+    sqnr_margin_db: float = 1.0
+    # timing
+    warmup: int = DEFAULT_WARMUP
+    repeat: int = DEFAULT_REPEAT
+    inner_iters: Union[int, str] = DEFAULT_INNER_ITERS
+    target_sample_ns: int = DEFAULT_TARGET_SAMPLE_NS
+    cpu: Optional[int] = DEFAULT_CPU
+    watchdog_s: float = DEFAULT_WATCHDOG_S
+    # perf
+    collect_perf_counters: bool = DEFAULT_COLLECT_PERF_COUNTERS
+    # speedup
+    baseline_author: str = DEFAULT_BASELINE_AUTHOR
+
+    @property
+    def timing_protocol(self) -> str:
+        """How a sample is timed under this config, as one comparable string.
+
+        Stored on every measurement (`Performance.timing_protocol`). A speedup
+        divides two measurements, so a baseline only counts for a candidate
+        when both carry the same value: changing any timing knob retires the
+        baselines collected before it instead of silently mixing them in.
+        """
+        if self.inner_iters == "auto":
+            loop = f"auto:{self.target_sample_ns}ns"
+        else:
+            loop = f"fixed:{self.inner_iters}"
+        return f"inner_iters={loop} warmup={self.warmup} repeat={self.repeat}"
+
+
+__all__ = [
+    "BenchmarkConfig",
+    "EvalConfig",
+    "EvalOverride",
+    "DEFAULT_BASELINE_AUTHOR",
+    "DEFAULT_WARMUP",
+    "DEFAULT_REPEAT",
+    "DEFAULT_INNER_ITERS",
+    "DEFAULT_CPU",
+    "DEFAULT_WATCHDOG_S",
+    "DEFAULT_CORRECTNESS_ABS_TOL",
+    "DEFAULT_CORRECTNESS_REL_TOL",
+    "DEFAULT_REQUIRED_MATCHED_RATIO",
+    "DEFAULT_COLLECT_PERF_COUNTERS",
+]

@@ -1,0 +1,11 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+litellm
+pydantic>=2.0
+numpy
+ml_dtypes
+torch
+python-dotenv
+filelock
+mcp==1.29.0
+pyyaml
+nanobot-ai==0.2.2

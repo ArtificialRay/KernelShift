@@ -1,0 +1,77 @@
+*.zip
+MEMORY.md
+*/build/
+*.cmake
+.venv/
+.vscode/
+.env
+logs/
+Guide.md
+plot.ipynb
+build/
+
+# macOS
+.DS_Store
+
+# Claude Code session data
+.codegraph/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Eval runtime outputs (generated at runtime, not checked in)
+generations/*
+results/*
+baselines/*
+traces/*
+!generations/.gitkeep
+!results/.gitkeep
+!baselines/.gitkeep
+!traces/.gitkeep
+
+# SSH credentials — never commit these
+provisioning/eval_config.json
+
+# Per-Terraform-workspace AWS account/namespace/profile map — never commit
+provisioning/workspaces.json
+
+# LLM provider api_key/api_base — never commit these
+eval/llm_providers.json
+skills/codex/codex-kernel-session/config.json
+
+# Large binary/analysis files
+*.pdf
+*.tar.gz
+
+# Terraform — state contains live AWS resource info, providers are large binaries
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.*
+terraform/.terraform.lock.hcl
+terraform/.kernelshift.lock
+.terraform
+
+.env
+.mcp*
+*.log
+
+bench-trace/
+__pycache__/
+*_binding_templates/
+agent-runs*/
+uv.lock
+notebooks/
+*_trajs/*
+
+# Claude Code project settings (keep skills/ but not local config)
+.claude/settings.json
+.claude/settings.local.json
+wandb/
+eval/llm_providers.json
+# e2e pipeline run directories (e2e/context.py)
+e2e-runs/

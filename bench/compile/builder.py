@@ -1,0 +1,172 @@
+"""Builder ABC + CompileError/CompileResult + shared build helpers.
+
+A Builder turns a Solution into a `.so` for dlopen. The concrete subclasses
+live in `bench/compile/builders/`:
+
+  - CandidateBuilder : shared raw-`float*` fallback for every candidate
+                       (non-baseline) solution and no-framework baselines.
+  - NcnnBuilder      : ncnn baselines, linked against a real ncnn checkout.
+  - LlamaCppBuilder  : llama.cpp solutions, linked against ggml static libs.
+  - SimdLoopBuilder  : simd-loop solutions.
+
+The candidate-vs-baseline decision is made by the orchestration layer
+(`bench/benchmark.py`) by comparing `solution.author == baseline_author` and
+passing the resulting `is_baseline` flag into `BuilderRegistry.build(...)`,
+which selects the builder via `can_build(solution, is_baseline)`.
+"""
+
+from __future__ import annotations
+
+import functools
+import logging
+import shutil
+import subprocess
+import tempfile
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+from bench.data.definition import Definition
+from bench.data.solution import Solution
+
+logger = logging.getLogger(__name__)
+
+
+@functools.lru_cache(maxsize=1)
+def _resolve_cxx() -> Optional[str]:
+    """Return the first available clang++ binary on this host."""
+    for name in ("clang++", "clang++-18", "clang++-17", "clang++-16"):
+        if shutil.which(name):
+            return name
+    return None
+
+
+class CompileError(RuntimeError):
+    """clang++ returned non-zero. The message includes the full stderr."""
+
+    def __init__(self, message: str, returncode: int, stderr: str, command: List[str]):
+        super().__init__(message)
+        self.returncode = returncode
+        self.stderr = stderr
+        self.command = command
+
+
+class BuildError(RuntimeError):
+    """No registered builder can build a solution, or a build failed structurally."""
+
+
+@dataclass
+class CompileResult:
+    so_path: Path
+    """Absolute path to the produced .so."""
+    build_dir: Path
+    """Temp dir holding the build artifacts. Lifecycle owned by the registry /
+    Benchmark.close()."""
+    command: List[str]
+    """The clang++ command that was run."""
+
+
+class Builder(ABC):
+    """Base class for all builders.
+
+    Subclasses declare a `_build_dir_name` prefix (for tempdir naming) and
+    implement is_available / can_build / build.
+    """
+
+    _build_dir_name: str
+
+    def __init__(self, build_dir_name: str) -> None:
+        self._build_dir_name = build_dir_name
+
+    @staticmethod
+    def is_available() -> bool:
+        """True if a clang++ binary is present on the host."""
+        return _resolve_cxx() is not None
+
+    @property
+    def _cxx(self) -> str:
+        """The clang++ binary to use (versioned fallback if unversioned is absent)."""
+        return _resolve_cxx() or "clang++"
+
+    @abstractmethod
+    def can_build(self, solution: Solution, is_baseline: bool) -> bool:
+        """True if this builder should build `solution` given the is_baseline flag."""
+
+    @abstractmethod
+    def build(self, definition: Definition, solution: Solution) -> CompileResult:
+        """Compile `solution` into a `.so` and return its CompileResult."""
+
+    def _make_build_dir(
+        self, solution: Solution, build_dir: Optional[Path] = None
+    ) -> Tuple[Path, Path]:
+        """Create (build_dir, sources_dir). Tempdir if build_dir is None."""
+        if build_dir is None:
+            build_dir = Path(
+                tempfile.mkdtemp(prefix=f"{self._build_dir_name}-{solution.name[:32]}-")
+            )
+        else:
+            build_dir.mkdir(parents=True, exist_ok=True)
+        sources_dir = build_dir / "sources"
+        sources_dir.mkdir(parents=True, exist_ok=True)
+        return build_dir, sources_dir
+
+    def _materialize_sources(self, solution: Solution, sources_dir: Path) -> List[Path]:
+        """Write solution.sources to disk; return the compilable source paths.
+
+        `.c`/`.S`/`.s` matter beyond C++: a shared lib (`-shared`) links
+        successfully even with unresolved symbols (they're only required at
+        dlopen time), so silently dropping a real source file here doesn't
+        surface as a CompileError — it surfaces later as a confusing
+        "undefined symbol" at dlopen (e.g. kleidiai's vendored .c/.S sources).
+        """
+        src_paths: List[Path] = []
+        for src in solution.sources:
+            dst = sources_dir / src.path
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_text(src.content)
+            if dst.suffix in (".cpp", ".cc", ".cxx", ".c", ".S", ".s"):
+                src_paths.append(dst)
+        return src_paths
+
+    _LANG_BY_SUFFIX = {
+        ".c": "c",
+        ".cpp": "c++", ".cc": "c++", ".cxx": "c++",
+        ".S": "assembler-with-cpp",
+        ".s": "assembler",
+    }
+
+    def _source_compile_args(self, paths: List[Path]) -> List[str]:
+        """Emit `-x <lang> <path>` pairs so each source is compiled as its true
+        language. The `clang++` driver compiles a `.c` file as C++, mangling
+        helper declarations whose `.S` definitions use plain C names (e.g.
+        kleidiai) — an undefined-symbol failure that only shows at dlopen,
+        since a `-shared` link doesn't require every symbol to resolve.
+        """
+        args: List[str] = []
+        for p in paths:
+            lang = self._LANG_BY_SUFFIX.get(p.suffix)
+            if lang is not None:
+                args += ["-x", lang]
+            args.append(str(p))
+        return args
+
+    def _run_clang(self, cmd: List[str], solution: Solution) -> None:
+        """Run the compile command; raise CompileError on non-zero exit."""
+        logger.info("compile: %s", " ".join(cmd))
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise CompileError(
+                f"clang++ failed (rc={proc.returncode}) for solution '{solution.name}'",
+                returncode=proc.returncode,
+                stderr=proc.stderr,
+                command=cmd,
+            )
+
+
+__all__ = [
+    "Builder",
+    "BuildError",
+    "CompileError",
+    "CompileResult",
+]

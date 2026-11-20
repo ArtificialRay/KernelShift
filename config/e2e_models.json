@@ -1,0 +1,11 @@
+{
+  "_comment": "Models for the end-to-end tokens/s experiment (e2e). Keys are the --model tags (the e2e:<model> tag of their definitions); the GGUF is fetched by `e2e evaluate --steps deploy` into ~/models/<file> on the box; min_measure_instance is what --provision creates (1-16 thread runs need 16 vCPUs).",
+  "qwen3.5-4b": {
+    "repo": "unsloth/Qwen3.5-4B-GGUF", "file": "Qwen3.5-4B-Q4_K_M.gguf", "size_gb": 2.74,
+    "min_measure_instance": "c8g.4xlarge"
+  },
+  "llama-3.1-8b": {
+    "repo": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF", "file": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf", "size_gb": 4.92,
+    "min_measure_instance": "c8g.4xlarge"
+  }
+}

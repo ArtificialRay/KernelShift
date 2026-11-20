@@ -1,0 +1,433 @@
+"""TraceSet — the in-memory warehouse over a KernelShift dataset root.
+
+A pure warehouse: it loads, indexes, queries (get_baseline_solution /
+get_baseline_min_ns), and persists (add_traces). The benchmark run loops live
+in bench/benchmark.py (Benchmark); bench/cli.py dispatches into that.
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, Iterator, List, Optional
+
+from .definition import Definition
+from .json_utils import append_jsonl_file, load_json_file, load_jsonl_file, save_jsonl_file
+from .solution import Solution
+from .trace import EvaluationStatus, Performance, Trace
+from .workload import Workload
+
+
+@dataclass
+class TraceSet:
+    """Warehouse for definitions, solutions, workloads, and traces under one root.
+
+    Directory layout this loads from:
+
+        root/
+          definitions/<op_type>/<def_name>.json
+          solutions/<dataset>/<author>/<op_type>/<sol_name>.json
+          workloads/<op_type>/<def_name>.jsonl
+          traces/<op_type>/<def_name>.jsonl
+
+    The solution-name index is built in `__post_init__` / `from_path`.
+    """
+
+    root: Optional[Path] = None
+    definitions: Dict[str, Definition] = field(default_factory=dict)
+    """def_name -> Definition."""
+    solutions: Dict[str, List[Solution]] = field(default_factory=dict)
+    """def_name -> all Solutions targeting that Definition."""
+    workloads: Dict[str, List[Workload]] = field(default_factory=dict)
+    """def_name -> all Workloads for that Definition."""
+    traces: Dict[str, List[Trace]] = field(default_factory=dict)
+    """def_name -> all run Traces for that Definition."""
+
+    _solution_by_name: Dict[str, Solution] = field(default_factory=dict, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        for sols in self.solutions.values():
+            for s in sols:
+                if s.name in self._solution_by_name:
+                    raise ValueError(f"Duplicate solution name: {s.name}")
+                self._solution_by_name[s.name] = s
+
+    def _require_root(self) -> Path:
+        if self.root is None:
+            raise ValueError("TraceSet has no root path (in-memory only)")
+        return self.root
+
+    @property
+    def definitions_path(self) -> Path:
+        return self._require_root() / "definitions"
+
+    @property
+    def solutions_path(self) -> Path:
+        return self._require_root() / "solutions"
+
+    @property
+    def workloads_path(self) -> Path:
+        return self._require_root() / "workloads"
+
+    @property
+    def traces_path(self) -> Path:
+        return self._require_root() / "traces"
+
+    @classmethod
+    def from_path(cls, root: Path | str) -> "TraceSet":
+        """Load a full TraceSet from a root directory.
+
+        Validates that each Solution's `dataset/author/op_type` matches its file path
+        (`solutions/<dataset>/<author>/<op_type>/...`).
+        """
+        root = Path(root)
+        root.mkdir(parents=True, exist_ok=True)
+        # Let `{"type": "tensor"}` workload inputs resolve their paths against this root.
+        # Imported here because bench.runtime imports bench.data; a caller without
+        # numpy only reads the schema and has no inputs to resolve.
+        try:
+            from bench.runtime.inputs import set_trace_root
+        except ImportError:
+            pass
+        else:
+            set_trace_root(root)
+        ts = cls(root=root)
+
+        # Definitions
+        if ts.definitions_path.exists():
+            for p in sorted(ts.definitions_path.rglob("*.json")):
+                d = load_json_file(Definition, p)
+                if d.name in ts.definitions:
+                    raise ValueError(f"Duplicate definition name: {d.name}")
+                ts.definitions[d.name] = d
+
+        # Solutions — skip _harness/ (it's compile-time data, not a Solution)
+        if ts.solutions_path.exists():
+            for p in sorted(ts.solutions_path.rglob("*.json")):
+                # Skip transient <def>_current.json checkpoints: a crashed run
+                # leaves one behind sharing the canonical solution name, which
+                # would trip the "Duplicate solution name" check below.
+                if p.name.endswith("_current.json"):
+                    continue
+                # solutions/<dataset>/<author>/<op_type>/<name>.json
+                rel = p.relative_to(ts.solutions_path)
+                if rel.parts[1] == "_harness":
+                    continue
+                if len(rel.parts) < 4:
+                    raise ValueError(
+                        f"Solution at unexpected depth: {p}. Expected "
+                        f"solutions/<dataset>/<author>/<op_type>/<name>.json"
+                    )
+                expected_dataset, expected_author, expected_op_type = rel.parts[:3]
+                s = load_json_file(Solution, p)
+
+                # Path-vs-content drift checks
+                if s.dataset.value != expected_dataset:
+                    raise ValueError(
+                        f"Solution {s.name}: dataset='{s.dataset.value}' but lives under "
+                        f"solutions/{expected_dataset}/... ({p})"
+                    )
+                if s.author != expected_author:
+                    raise ValueError(
+                        f"Solution {s.name}: author='{s.author}' but lives under "
+                        f"solutions/.../{expected_author}/... ({p})"
+                    )
+                # Derive expected op_type from definition (which must be loaded)
+                def_obj = ts.definitions.get(s.definition)
+                if def_obj is None:
+                    raise ValueError(
+                        f"Solution {s.name} references unknown definition '{s.definition}'"
+                    )
+                if def_obj.op_type != expected_op_type:
+                    raise ValueError(
+                        f"Solution {s.name}: definition op_type='{def_obj.op_type}' but lives "
+                        f"under solutions/.../.../{expected_op_type}/... ({p})"
+                    )
+
+                if s.name in ts._solution_by_name:
+                    raise ValueError(f"Duplicate solution name: {s.name}")
+                ts.solutions.setdefault(s.definition, []).append(s)
+                ts._solution_by_name[s.name] = s
+
+        # Workloads
+        if ts.workloads_path.exists():
+            for p in sorted(ts.workloads_path.rglob("*.jsonl")):
+                # workloads/<op_type>/<def_name>.jsonl
+                def_name = p.stem
+                for w in load_jsonl_file(Workload, p):
+                    ts.workloads.setdefault(def_name, []).append(w)
+
+        # Traces
+        if ts.traces_path.exists():
+            for p in sorted(ts.traces_path.rglob("*.jsonl")):
+                for t in load_jsonl_file(Trace, p):
+                    ts.traces.setdefault(t.definition, []).append(t)
+
+        return ts
+
+    def get_definition(self, name: str) -> Optional[Definition]:
+        return self.definitions.get(name)
+
+    def get_solution(self, name: str) -> Optional[Solution]:
+        return self._solution_by_name.get(name)
+
+    def get_workloads(self, def_name: str) -> List[Workload]:
+        return list(self.workloads.get(def_name, []))
+
+    def get_solutions_for(self, def_name: str) -> List[Solution]:
+        return list(self.solutions.get(def_name, []))
+
+    def get_baseline_solution(
+        self, def_name: str, baseline_author: str
+    ) -> Optional[Solution]:
+        """Resolve the unique `baseline_author` Solution for `def_name`.
+
+        Raises if more than one baseline solution exists for the Definition under this author (an indicator
+        of a bad migration), returns None if zero exist.
+        """
+        candidates = [
+            s for s in self.solutions.get(def_name, []) if s.author == baseline_author
+        ]
+        if not candidates:
+            return None
+        if len(candidates) > 1:
+            names = ", ".join(s.name for s in candidates)
+            raise ValueError(
+                f"Multiple baseline solutions for definition '{def_name}' "
+                f"under author '{baseline_author}': {names}"
+            )
+        return candidates[0]
+
+    def _baseline_performances(
+        self,
+        def_name: str,
+        workload_uuid: str,
+        baseline_author: str,
+        timing_protocol: Optional[str],
+    ) -> Iterator[Performance]:
+        """PASSED baseline measurements of (def_name, workload_uuid).
+
+        With `timing_protocol` set, only those measured under it: a baseline
+        timed any other way is not a valid denominator for the caller's
+        speedup. None accepts every measurement.
+        """
+        baseline = self.get_baseline_solution(def_name, baseline_author)
+        if baseline is None:
+            return
+        for t in self.traces.get(def_name, []):
+            if t.solution != baseline.name:
+                continue
+            if t.workload.uuid != workload_uuid:
+                continue
+            ev = t.evaluation
+            if ev is None or ev.status != EvaluationStatus.PASSED or ev.performance is None:
+                continue
+            if timing_protocol is not None and ev.performance.timing_protocol != timing_protocol:
+                continue
+            yield ev.performance
+
+    def has_baseline(
+        self, def_name: str, baseline_author: str, timing_protocol: Optional[str] = None
+    ) -> bool:
+        """True if any workload of `def_name` has a usable baseline measurement
+        (see `_baseline_performances` for what `timing_protocol` restricts)."""
+        return any(
+            True
+            for wl in self.get_workloads(def_name)
+            for _ in self._baseline_performances(def_name, wl.uuid, baseline_author, timing_protocol)
+        )
+
+    def get_baseline_min_ns(
+        self,
+        def_name: str,
+        workload_uuid: str,
+        baseline_author: str,
+        timing_protocol: Optional[str] = None,
+    ) -> Optional[int]:
+        """Return the cached baseline `min_ns` for (def_name, workload_uuid).
+
+        Returns None if no usable PASSED baseline trace exists for that workload — caller leaves `reference_min_ns`
+        and `speedup` as None in that case.
+        """
+        return min(
+            (p.min_ns for p in self._baseline_performances(
+                def_name, workload_uuid, baseline_author, timing_protocol)),
+            default=None,
+        )
+
+    def get_baseline_min_cycles(
+        self,
+        def_name: str,
+        workload_uuid: str,
+        baseline_author: str,
+        timing_protocol: Optional[str] = None,
+    ) -> Optional[int]:
+        """Return the cached baseline `cycles` for (def_name, workload_uuid).
+
+        Cycles analog of `get_baseline_min_ns`. Returns None if no usable PASSED
+        baseline trace with a non-null `cycles` exists for that workload (traces
+        without perf counters have `cycles=None`); caller then leaves
+        `reference_cycles` / `cycle_speedup` as None.
+        """
+        return min(
+            (p.cycles for p in self._baseline_performances(
+                def_name, workload_uuid, baseline_author, timing_protocol)
+             if p.cycles is not None),
+            default=None,
+        )
+
+    def get_baseline_inner_iters(
+        self,
+        def_name: str,
+        workload_uuid: str,
+        baseline_author: str,
+        timing_protocol: Optional[str] = None,
+    ) -> Optional[int]:
+        """Return the `inner_iters` of the measurement `get_baseline_min_ns` reports.
+
+        A candidate is timed with this count, so both sides of its speedup
+        repeat the kernel the same number of times per sample.
+        """
+        best = min(
+            self._baseline_performances(def_name, workload_uuid, baseline_author, timing_protocol),
+            key=lambda p: p.min_ns,
+            default=None,
+        )
+        return best.inner_iters if best is not None else None
+
+    def add_traces(self, traces: List[Trace]) -> None:
+        """Add traces to memory and persist to disk (per definition's op_type).
+
+        On disk, an incoming trace replaces any stored trace with the same
+        (solution, workload uuid), e.g. when re-collecting baselines.
+        """
+        buckets: Dict[Path, List[Trace]] = defaultdict(list)
+        for t in traces:
+            if t.definition not in self.definitions:
+                raise ValueError(f"Trace references unknown definition: {t.definition}")
+            self.traces.setdefault(t.definition, []).append(t)
+            if t.solution is None:
+                raise ValueError("Use add_workload_traces for workload-only traces")
+            d = self.definitions[t.definition]
+            path = self.traces_path / d.op_type / f"{d.name}.jsonl"
+            buckets[path].append(t)
+
+        if self.root is not None:
+            for path, new in buckets.items():
+                incoming = {(t.solution, t.workload.uuid) for t in new}
+                kept: List[Trace] = []
+                if path.exists():
+                    kept = [
+                        t for t in load_jsonl_file(Trace, path)
+                        if (t.solution, t.workload.uuid) not in incoming
+                    ]
+                # save_jsonl_file mkdirs + overwrites; kept+new == new for a fresh file.
+                save_jsonl_file(kept + new, path)
+
+    def add_workload_traces(self, workloads: List[Workload], def_name: str) -> None:
+        """Register workload points for a definition (no benchmark run involved yet)."""
+        if def_name not in self.definitions:
+            raise ValueError(f"Unknown definition: {def_name}")
+        d = self.definitions[def_name]
+        for w in workloads:
+            self.workloads.setdefault(def_name, []).append(w)
+        if self.root is not None:
+            path = self.workloads_path / d.op_type / f"{d.name}.jsonl"
+            append_jsonl_file(workloads, path)
+
+    def freeze_for(
+        self, def_name: str, baseline_author: str, timing_protocol: Optional[str] = None
+    ) -> "TraceSetSnapshot":
+        """A read-only, picklable slice of this definition's workloads + baseline
+        lookups: all the isolated evaluate subprocess needs, computed in the
+        parent from in-memory data.
+
+        `timing_protocol` restricts the baseline lookups exactly as it does on
+        the live TraceSet; the snapshot answers for that protocol only.
+        """
+        workloads = self.get_workloads(def_name)
+        baseline = {}
+        for wl in workloads:
+            key = (def_name, wl.uuid, baseline_author, timing_protocol)
+            baseline[wl.uuid] = {
+                "min_ns": self.get_baseline_min_ns(*key),
+                "cycles": self.get_baseline_min_cycles(*key),
+                "inner_iters": self.get_baseline_inner_iters(*key),
+            }
+        return TraceSetSnapshot(
+            definition_name=def_name,
+            baseline_author=baseline_author,
+            timing_protocol=timing_protocol,
+            _workloads=workloads,
+            _baseline=baseline,
+        )
+
+    def summary(self) -> Dict[str, Any]:
+        """Counts only (passed/failed)."""
+        all_traces = [t for ts in self.traces.values() for t in ts]
+        passed = sum(1 for t in all_traces if t.is_successful())
+        return {
+            "definitions": len(self.definitions),
+            "solutions": sum(len(s) for s in self.solutions.values()),
+            "workloads": sum(len(w) for w in self.workloads.values()),
+            "traces_total": len(all_traces),
+            "traces_passed": passed,
+            "traces_failed": len(all_traces) - passed,
+        }
+
+
+@dataclass(frozen=True)
+class TraceSetSnapshot:
+    """Read-only, picklable slice of one TraceSet definition's data.
+
+    Produced by TraceSet.freeze_for() and handed to an isolated evaluate
+    subprocess (bench/runtime/isolation.py) in place of a live TraceSet. It
+    exposes the read-only lookups evaluate paths call (get_workloads /
+    get_baseline_min_ns / get_baseline_min_cycles / get_baseline_inner_iters):
+    cheap to pickle, and unable to write to the warehouse (no add_traces, no root).
+    """
+
+    definition_name: str
+    baseline_author: str
+    timing_protocol: Optional[str]
+    """The protocol the baseline lookups were frozen for (None: any)."""
+    _workloads: List[Workload]
+    _baseline: Dict[str, Dict[str, Optional[int]]]
+    """workload uuid -> {"min_ns": ..., "cycles": ..., "inner_iters": ...}."""
+
+    def get_workloads(self, def_name: str) -> List[Workload]:
+        assert def_name == self.definition_name, (
+            f"TraceSetSnapshot is scoped to {self.definition_name!r}, got {def_name!r}"
+        )
+        return list(self._workloads)
+
+    def _baseline_field(
+        self, field: str, def_name: str, workload_uuid: str, timing_protocol: Optional[str]
+    ) -> Optional[int]:
+        assert def_name == self.definition_name, (
+            f"TraceSetSnapshot is scoped to {self.definition_name!r}, got {def_name!r}"
+        )
+        assert timing_protocol == self.timing_protocol, (
+            f"TraceSetSnapshot was frozen for timing protocol {self.timing_protocol!r}, "
+            f"got {timing_protocol!r}"
+        )
+        return self._baseline.get(workload_uuid, {}).get(field)
+
+    def get_baseline_min_ns(
+        self, def_name: str, workload_uuid: str, baseline_author: Optional[str] = None,
+        timing_protocol: Optional[str] = None,
+    ) -> Optional[int]:
+        return self._baseline_field("min_ns", def_name, workload_uuid, timing_protocol)
+
+    def get_baseline_min_cycles(
+        self, def_name: str, workload_uuid: str, baseline_author: Optional[str] = None,
+        timing_protocol: Optional[str] = None,
+    ) -> Optional[int]:
+        return self._baseline_field("cycles", def_name, workload_uuid, timing_protocol)
+
+    def get_baseline_inner_iters(
+        self, def_name: str, workload_uuid: str, baseline_author: Optional[str] = None,
+        timing_protocol: Optional[str] = None,
+    ) -> Optional[int]:
+        return self._baseline_field("inner_iters", def_name, workload_uuid, timing_protocol)

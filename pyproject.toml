@@ -1,0 +1,21 @@
+[project]
+name = "kernelshift"
+version = "0.1.0"
+description = "Benchmark for LLM-generated AArch64 SIMD (NEON/SVE/SVE2/SME2) kernels on Arm CPUs"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "litellm",
+    "pydantic>=2.0",
+    "numpy",
+    "ml_dtypes",
+    "torch",
+    "python-dotenv",
+    "filelock",
+    "mcp==1.29.0",
+    "pyyaml",
+    "nanobot-ai==0.2.2",
+]
+
+[project.optional-dependencies]
+wandb = ["wandb"]

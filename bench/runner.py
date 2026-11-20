@@ -1,0 +1,268 @@
+"""Run one Solution against one Definition's workloads, return List[Trace].
+
+Thin compile-and-dispatch shell. Given a (Definition, Solution, [Workload]) tuple
+this module compiles + dlopens the solution, binds the kernel + reference, then
+hands each workload to a pluggable `Evaluator` (bench/evaluators/) which owns the
+correctness + performance protocol.
+
+Responsibilities here (per-solution, around the evaluator):
+  - compile once (BuilderRegistry), fan a COMPILE_ERROR trace to every workload
+    on failure;
+  - dlopen + bind `kernelshift_entry_<op>` + pick the dataset adapter → `BoundKernel`;
+  - exec the Definition.reference → `ref_run`;
+  - snapshot the Environment; wrap each evaluator result into a Trace.
+
+It does NOT touch disk for persistence — the caller (bench/benchmark.py) does.
+"""
+
+from __future__ import annotations
+
+import ctypes
+import logging
+import os
+import platform
+import traceback
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+
+from bench.compile import BuilderRegistry, CompileError
+from bench.config import EvalConfig
+from bench.data.definition import Definition
+from bench.data.solution import Solution
+from bench.data.trace import (
+    Environment,
+    Evaluation,
+    EvaluationStatus,
+    Trace,
+)
+from bench.data.workload import Workload
+from bench.datasets import get as get_dataset_adapter
+from bench.evaluators import BoundKernel, resolve_evaluator
+from bench.runtime.isolation import SubprocessCrashed, SubprocessTimeout, run_in_subprocess
+
+logger = logging.getLogger(__name__)
+
+
+def run_solution_on_workloads(
+    definition: Definition,
+    solution: Solution,
+    workloads: List[Workload],
+    *,
+    is_baseline: bool = False,                # selects builder + adapter (see _bind_kernel)
+    cfg: Optional[EvalConfig] = None,         # evaluation knobs (tolerances, timing, perf)
+    trace_set: Optional[Any] = None,          # for baseline cycles/ns lookup → speedup
+    solutions_root: Optional[Path] = None,    # kept for API symmetry; resolved via the registry
+) -> List[Trace]:
+    """Run one Solution against a list of Workloads, return one Trace each.
+
+    Runs `_run_solution_on_workloads_direct` in an isolated subprocess (see
+    bench/runtime/isolation.py) — the actual compile+dlopen+evaluate work is
+    unchanged, just contained so a candidate that hangs or crashes can't take
+    this process down with it. On compile failure, every workload gets a
+    COMPILE_ERROR Trace (same log); on a subprocess timeout/crash, every
+    workload gets a TIMEOUT/RUNTIME_ERROR Trace the same way.
+    """
+    cfg = cfg or EvalConfig()
+    snapshot = (
+        trace_set.freeze_for(definition.name, cfg.baseline_author, cfg.timing_protocol)
+        if trace_set is not None else None
+    )
+
+    try:
+        return run_in_subprocess(
+            _run_solution_on_workloads_direct,
+            args=(definition, solution, workloads),
+            kwargs={
+                "is_baseline": is_baseline,
+                "cfg": cfg,
+                "trace_set": snapshot,
+                "solutions_root": solutions_root,
+            },
+        )
+    except SubprocessTimeout as e:
+        env = _current_environment(cpu_pinned=cfg.cpu)
+        timestamp = datetime.now(timezone.utc).isoformat()
+        return [
+            _trace(definition.name, w, solution.name,
+                   _eval_error(EvaluationStatus.TIMEOUT, env, timestamp, str(e)))
+            for w in workloads
+        ]
+    except SubprocessCrashed as e:
+        env = _current_environment(cpu_pinned=cfg.cpu)
+        timestamp = datetime.now(timezone.utc).isoformat()
+        return [
+            _trace(definition.name, w, solution.name,
+                   _eval_error(EvaluationStatus.RUNTIME_ERROR, env, timestamp, str(e)))
+            for w in workloads
+        ]
+
+
+def _run_solution_on_workloads_direct(
+    definition: Definition,
+    solution: Solution,
+    workloads: List[Workload],
+    *,
+    is_baseline: bool = False,
+    cfg: Optional[EvalConfig] = None,
+    trace_set: Optional[Any] = None,
+    solutions_root: Optional[Path] = None,
+) -> List[Trace]:
+    """The actual compile+dlopen+per-workload-evaluate work — runs inside the
+    isolated subprocess `run_solution_on_workloads` spawns. Not meant to be
+    called directly except for local debugging (e.g. with a debugger attached,
+    where subprocess isolation gets in the way)."""
+    cfg = cfg or EvalConfig()
+
+    if solution.definition != definition.name:
+        raise ValueError(
+            f"Solution '{solution.name}' targets definition '{solution.definition}', "
+            f"not '{definition.name}'"
+        )
+
+    _check_single_thread_safety(solution)
+
+    env = _current_environment(cpu_pinned=cfg.cpu)
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    try:
+        compiled = BuilderRegistry.get_instance().build(definition, solution, is_baseline)
+    except (CompileError, FileNotFoundError, NotImplementedError) as e:
+        log = _format_compile_error(e)
+        logger.warning("Compile failed for %s: %s", solution.name, log[:300])
+        return [
+            _trace(definition.name, w, solution.name,
+                   _eval_error(EvaluationStatus.COMPILE_ERROR, env, timestamp, log))
+            for w in workloads
+        ]
+
+    try:
+        kernel = _bind_kernel(definition, solution, is_baseline, compiled)
+        ref_run = _compile_reference(definition)
+    except Exception as e:
+        log = f"Failed to load compiled .so or reference: {e}\n{traceback.format_exc()}"
+        return [
+            _trace(definition.name, w, solution.name,
+                   _eval_error(EvaluationStatus.RUNTIME_ERROR, env, timestamp, log))
+            for w in workloads
+        ]
+
+    evaluator = resolve_evaluator(definition)
+    traces: List[Trace] = []
+    for wl in workloads:
+        ev = evaluator.evaluate(
+            definition, wl, kernel, ref_run, cfg,
+            env=env, timestamp=timestamp,
+            is_baseline=is_baseline, trace_set=trace_set,
+        )
+        traces.append(_trace(definition.name, wl, solution.name, ev))
+
+    return traces
+
+
+def _bind_kernel(
+    definition: Definition, solution: Solution, is_baseline: bool, compiled: Any
+) -> BoundKernel:
+    """Dlopen the compiled .so and wrap it as a BoundKernel.
+
+    simd-loop always routes to SimdLoopDataset (signature derived from
+    Definition.simd_loop_meta), regardless of is_baseline. Every non-baseline
+    solution (reference-scalar, agent-submitted candidates) routes to
+    RawDataset — the slim raw-pointer ABI every candidate builder targets,
+    regardless of its declared dataset. Most true baselines pick a
+    framework-specific adapter by dataset (llama.cpp/ncnn) — the exception is
+    kleidiai, which is a true baseline but still uses "raw" because it has no
+    framework Mat/Option wrapper of its own (see SupportedDatasets.KLEIDIAI).
+    """
+    lib = ctypes.CDLL(str(compiled.so_path))
+    if solution.dataset.value == "simd-loop":
+        adapter_name = "simd-loop"
+    elif not is_baseline:
+        adapter_name = "raw"
+    elif solution.dataset.value == "llama.cpp":
+        adapter_name = "llama.cpp"
+    elif solution.dataset.value == "ncnn":
+        adapter_name = "ncnn"
+    elif solution.dataset.value == "kleidiai":
+        # KleidiAI baselines embed raw float*-ABI sources directly, same calling
+        # convention as every candidate, so "raw" applies here too even
+        # though this is a true baseline.
+        adapter_name = "raw"
+    else:
+        raise ValueError(f"No baseline adapter for dataset {solution.dataset.value!r}")
+    entry = _bind_entry(lib, definition.op_type)
+    adapter = get_dataset_adapter(adapter_name)()
+    return BoundKernel(entry=entry, adapter=adapter, op_type=definition.op_type)
+
+
+def _check_single_thread_safety(solution: Solution) -> None:
+    """Refuse to time a solution that asks for multi-threaded execution.
+
+    The ncnn default Option (_mat_factory.cpp) locks num_threads=1; we check
+    OMP_NUM_THREADS as the canonical signal. See the note in
+    bench/runtime/timing.py.
+    """
+    n = os.environ.get("OMP_NUM_THREADS")
+    if n and n.isdigit() and int(n) > 1:
+        raise RuntimeError(
+            f"OMP_NUM_THREADS={n} but bench/runtime/timing.py only supports "
+            f"single-threaded kernels in Phase 1. Set OMP_NUM_THREADS=1 or "
+            f"unset it. (See bench/runtime/timing.py for context.)"
+        )
+
+
+def _current_environment(cpu_pinned: Optional[int]) -> Environment:
+    """Snapshot the host so traces are reproducible."""
+    machine = platform.machine() or "unknown"
+    node = platform.node() or "unknown"
+    hw = f"{machine}-{node}"
+    return Environment(
+        hardware=hw,
+        cpu_pinned=cpu_pinned,
+        libs={
+            "python": platform.python_version(),
+            "numpy": np.__version__,
+        },
+    )
+
+
+def _format_compile_error(e: Exception) -> str:
+    if isinstance(e, CompileError):
+        return f"clang++ rc={e.returncode}\nstderr:\n{e.stderr}\ncmd: {' '.join(e.command)}"
+    return f"{type(e).__name__}: {e}"
+
+
+def _trace(def_name: str, w: Workload, sol_name: str, ev: Evaluation) -> Trace:
+    return Trace(definition=def_name, workload=w, solution=sol_name, evaluation=ev)
+
+
+def _eval_error(status: EvaluationStatus, env: Environment, ts: str, log: str) -> Evaluation:
+    return Evaluation(status=status, environment=env, timestamp=ts, log=log)
+
+
+def _bind_entry(lib: ctypes.CDLL, op_type: str):
+    """Resolve kernelshift_entry_<op_type> from the dlopened .so.
+
+    Adapters construct fully-typed ctypes objects in entry_args, so no
+    argtypes table is needed here.
+    """
+    fn = getattr(lib, f"kernelshift_entry_{op_type}")
+    fn.restype = ctypes.c_int
+    # Stash the lib so adapters can bind their own symbols (e.g. mat_factory).
+    fn._lib = lib  # type: ignore[attr-defined]
+    return fn
+
+
+def _compile_reference(d: Definition):
+    """exec d.reference and return its top-level run callable."""
+    ns: Dict[str, Any] = {}
+    exec(d.reference, ns)  # noqa: S102 — reference code is trusted dataset content
+    run = ns.get("run")
+    if not callable(run):
+        raise ValueError(f"Definition '{d.name}' reference has no callable `run`")
+    return run
+
+
+__all__ = ["run_solution_on_workloads"]

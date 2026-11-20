@@ -1,0 +1,96 @@
+"""SIMDLoopKernelSession — KernelSession implementation for the simd-loop dataset.
+
+Agent writes `kernel.cpp` containing `inner_<op_type>(...)` (op_type is
+`loop_NNN`). The fused harness files (`loop_NNN.h` + `loop_NNN.cpp`) are
+lifted from the session's baseline solution for the definition
+(`bench_cfg.baseline_author`), so the agent only needs to write the inner
+loop kernel — not the harness boilerplate.
+
+Same contract shape as the ncnn dataset (`inner_<op_type>` behind a fused
+harness); the differences are the dataset enum, the baseline author to lift
+the harness from (typically "reference-scalar", the scalar baseline).
+"""
+
+from __future__ import annotations
+
+from typing import Optional
+
+from bench.data.solution import Solution, SourceFile, SolutionSpec, SupportedDatasets
+from contracts import AGENT_KERNEL_FILENAME
+
+from . import isa
+from .base import KernelSession
+from .schemas import standard_tool_schemas
+
+
+class SIMDLoopKernelSession(KernelSession):
+    """Tool surface for simd-loop dataset definitions (loop_NNN)."""
+
+    dataset = "simd-loop"
+
+    def make_solution(self, code: str) -> Solution:
+        """Wrap agent-written kernel.cpp into a Solution alongside the fused harness.
+
+        Harness files (loop_NNN.h + loop_NNN.cpp) are lifted from the baseline
+        reference solution. compile_flags/isa_features/target_hardware are
+        derived from the session's explicit isa; the reference's -O*/-march=
+        flags are dropped so the candidate builds with -O3 + the requested
+        isa's march.
+        """
+        ref_author = self._bench_cfg.baseline_author
+        ref = self._trace_set.get_baseline_solution(self._definition.name, ref_author)
+        if ref is None:
+            raise ValueError(
+                f"No '{ref_author}' baseline solution for definition "
+                f"{self._definition.name!r} in TraceSet — cannot build simd-loop "
+                "candidate harness. Generate it with plugins/simd_loop/plugin.py (see plugins/README.md) and add it with kgen add solution."
+            )
+
+        harness = [s for s in ref.sources if s.path != AGENT_KERNEL_FILENAME]
+        if not harness:
+            raise ValueError(
+                f"'{ref_author}' solution for {self._definition.name!r} has no harness "
+                f"files besides {AGENT_KERNEL_FILENAME} — unexpected layout"
+            )
+
+        agent_kernel = SourceFile(path=AGENT_KERNEL_FILENAME, content=code)
+
+        march, isa_features, target_hardware = isa.march_for_isa(
+            self._isa, instance_label=self._instance_label
+        )
+
+        base_flags = [
+            f for f in ref.spec.compile_flags
+            if not f.startswith("-O") and not f.startswith("-march=")
+        ]
+        compile_flags = ["-O3", march, *base_flags]
+
+        return Solution(
+            name=f"{self._author}_{self._definition.name}",
+            definition=self._definition.name,
+            dataset=SupportedDatasets.SIMD_LOOP,
+            author=self._author,
+            spec=SolutionSpec(
+                language=ref.spec.language,
+                target_hardware=target_hardware,
+                entry_point=ref.spec.entry_point,
+                dependencies=list(ref.spec.dependencies),
+                isa_features=isa_features,
+                compile_flags=compile_flags,
+                link_flags=list(ref.spec.link_flags),
+            ),
+            sources=[*harness, agent_kernel],
+        )
+
+    def disassemble(self, definition: str, version: int, fn: Optional[str] = None) -> dict:
+        """Disassemble the agent's inner kernel (not the harness wrapper)."""
+        if fn is None:
+            fn = f"inner_{self._definition.op_type}"
+        return super().disassemble(definition=definition, version=version, fn=fn)
+
+    @classmethod
+    def tool_schemas(cls) -> list[dict]:
+        return standard_tool_schemas()
+
+
+__all__ = ["SIMDLoopKernelSession"]

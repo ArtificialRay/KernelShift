@@ -1,0 +1,259 @@
+"""DefaultEvaluator — elementwise-tolerance correctness + timing (incl. hardware
+counters via `time_callable`). The fallback evaluator: the registry returns it
+when no specialized evaluator matches.
+"""
+
+from __future__ import annotations
+
+import traceback
+from typing import Any, Optional, Tuple
+
+import numpy as np
+
+from bench.config import EvalConfig
+from bench.data.definition import Definition
+from bench.data.trace import (
+    Correctness,
+    Environment,
+    Evaluation,
+    EvaluationStatus,
+    Performance,
+)
+from bench.data.workload import Workload
+from bench.runtime.correctness import compare
+from bench.runtime.inputs import gen_inputs_for_workload
+from bench.runtime.timing import (
+    WatchdogTimeout,
+    pick_inner_iters,
+    time_callable,
+)
+
+from .evaluator import BoundKernel, Evaluator, RefBaseline, _error
+
+
+class DefaultEvaluator(Evaluator):
+    """General correctness+timing evaluator; the default for every definition."""
+
+    @classmethod
+    def can_evaluate(cls, definition: Definition) -> bool:
+        # Registry uses this only for specialized evaluators; DefaultEvaluator is
+        # the fallback and is never placed in the match list. Returning True keeps
+        # it usable directly in tests.
+        return True
+
+    # Phase 0: reference-side golden data
+
+    @classmethod
+    def build_baseline(
+        cls, definition: Definition, workload: Workload, ref_run: Any, cfg: EvalConfig
+    ) -> RefBaseline:
+        """Generate inputs and run the reference (the numpy/PyTorch ground truth)."""
+        try:
+            np_inputs = gen_inputs_for_workload(definition, workload)
+        except Exception as e:
+            raise RuntimeError(f"gen_inputs failed: {e}\n{traceback.format_exc()}") from e
+
+        try:
+            ref_kwargs = {k: v for k, v in np_inputs.items()}
+            ref_out = ref_run(**ref_kwargs)
+            ref_np = _to_numpy(ref_out)
+        except Exception as e:
+            raise RuntimeError(f"reference run() failed: {e}\n{traceback.format_exc()}") from e
+
+        # A calibrated workload states what the *baseline* kernel scores on these
+        # exact inputs; the candidate is then held to that, not to a fixed floor.
+        floor = None
+        tags = workload.tags or {}
+        raw = tags.get("baseline_sqnr_db")
+        if raw is not None:
+            try:
+                floor = float(raw) - cfg.sqnr_margin_db
+            except (TypeError, ValueError):
+                floor = None
+        return RefBaseline(
+            np_inputs=np_inputs, ref_np=ref_np, sqnr_floor_db=floor,
+            sqnr_floor_author=tags.get("baseline_sqnr_author"),
+        )
+
+    # Phase 1: correctness
+
+    @classmethod
+    def check_correctness(
+        cls,
+        definition: Definition,
+        kernel: BoundKernel,
+        ctx: Any,
+        baseline: RefBaseline,
+        cfg: EvalConfig,
+        env: Environment,
+        timestamp: str,
+    ) -> Tuple[Optional[Correctness], Optional[Evaluation]]:
+        # One untimed kernel call to validate correctness
+        try:
+            rc = kernel.invoke(ctx)
+            if rc != 0:
+                log = f"kernel returned non-zero: {rc}"
+                return None, _error(EvaluationStatus.RUNTIME_ERROR, env, timestamp, log)
+            candidate_np = kernel.read_output(ctx)
+            # Align rank with the Definition's declared output (e.g. ncnn::Mat
+            # has no batch dim; Definition says (N, C, H, W) → prepend N=1).
+            candidate_np = _align_to_definition_output(candidate_np, definition)
+        except Exception as e:
+            log = f"kernel call failed: {e}\n{traceback.format_exc()}"
+            return None, _error(EvaluationStatus.RUNTIME_ERROR, env, timestamp, log)
+
+        c = compare(
+            candidate_np, baseline.ref_np,
+            abs_tol=cfg.abs_tol, rel_tol=cfg.rel_tol,
+            required_matched_ratio=cfg.required_matched_ratio,
+        )
+        if not c.passed:
+            # compare() returns the long form ("shape: got X, ref Y" / "dtype: ..."),
+            # so match on prefix.
+            reason = c.fail_reason or ""
+            status = (
+                EvaluationStatus.INCORRECT_SHAPE if reason.startswith("shape")
+                else EvaluationStatus.INCORRECT_DTYPE if reason.startswith("dtype")
+                else EvaluationStatus.INCORRECT_NUMERICAL
+            )
+            log = (
+                f"correctness {c.fail_reason}: max_abs={c.max_absolute_error:.3e} "
+                f"max_rel={c.max_relative_error:.3e} "
+                f"matched={c.matched_ratio:.4f} "
+                f"first_idx={c.first_mismatch_index} "
+                f"got={c.first_mismatch_got:.6f} ref={c.first_mismatch_ref:.6f}"
+            )
+            return None, Evaluation(
+                status=status,
+                environment=env,
+                timestamp=timestamp,
+                log=log,
+                correctness=Correctness(
+                    max_absolute_error=c.max_absolute_error,
+                    max_relative_error=c.max_relative_error,
+                    matched_ratio=c.matched_ratio,
+                ),
+            )
+
+        return (
+            Correctness(
+                max_absolute_error=c.max_absolute_error,
+                max_relative_error=c.max_relative_error,
+                matched_ratio=c.matched_ratio,
+            ),
+            None,
+        )
+
+    # Phase 2: performance
+
+    @classmethod
+    def eval_performance(
+        cls,
+        definition: Definition,
+        workload: Workload,
+        kernel: BoundKernel,
+        ctx: Any,
+        baseline: RefBaseline,
+        cfg: EvalConfig,
+        env: Environment,
+        timestamp: str,
+        *,
+        is_baseline: bool,
+        trace_set: Optional[Any],
+    ) -> Tuple[Optional[Performance], Optional[Evaluation]]:
+        # Baseline lookup happens BEFORE timing. Only a baseline measured under
+        # this config's timing protocol counts.
+        ref_cycles: Optional[int] = None
+        ref_min_ns: Optional[int] = None
+        ref_inner_iters: Optional[int] = None
+        cycle_speedup: Optional[float] = None
+        time_speedup: Optional[float] = None
+        if trace_set is not None and not is_baseline:
+            lookup = dict(baseline_author=cfg.baseline_author, timing_protocol=cfg.timing_protocol)
+            ref_cycles = trace_set.get_baseline_min_cycles(definition.name, workload.uuid, **lookup)
+            ref_min_ns = trace_set.get_baseline_min_ns(definition.name, workload.uuid, **lookup)
+            ref_inner_iters = trace_set.get_baseline_inner_iters(
+                definition.name, workload.uuid, **lookup
+            )
+
+        invoke = lambda: kernel.invoke(ctx)  # noqa: E731
+        inner_iters = cfg.inner_iters
+        if inner_iters == "auto":
+            # A candidate repeats the kernel as often per sample as its
+            # baseline did; only a baseline (or a candidate without one) probes.
+            inner_iters = ref_inner_iters or pick_inner_iters(
+                invoke, target_sample_ns=cfg.target_sample_ns
+            )
+
+        try:
+            timing = time_callable(
+                invoke,
+                warmup=cfg.warmup, repeat=cfg.repeat, inner_iters=inner_iters,
+                cpu=cfg.cpu, watchdog_s=cfg.watchdog_s,
+                collect_perf_counters=cfg.collect_perf_counters,
+            )
+        except WatchdogTimeout as e:
+            return None, _error(EvaluationStatus.TIMEOUT, env, timestamp, str(e))
+
+        if ref_cycles is not None and timing.cycles and timing.cycles > 0:
+            cycle_speedup = ref_cycles / timing.cycles
+        if ref_min_ns is not None and timing.min_ns > 0:
+            time_speedup = ref_min_ns / timing.min_ns
+
+        return (
+            Performance(
+                min_ns=timing.min_ns,
+                inner_iters=timing.inner_iters,
+                timing_protocol=cfg.timing_protocol,
+                p5_ns=timing.p5_ns,
+                reference_min_ns=ref_min_ns,
+                cycle_speedup=cycle_speedup,
+                time_speedup=time_speedup,
+                repeat=timing.repeat,
+                warmup=timing.warmup,
+                cycles=timing.cycles,
+                instructions=timing.instructions,
+                ipc=timing.ipc,
+                cache_misses=timing.cache_misses,
+                reference_cycles=ref_cycles,
+            ),
+            None,
+        )
+
+
+
+def _align_to_definition_output(arr: np.ndarray, d: Definition) -> np.ndarray:
+    """Reshape candidate output to match the Definition's declared output rank.
+
+    ncnn::Mat has no batch dim — if the Definition declares (N, C_out, H_out, W_out)
+    and ncnn returns (C_out, H_out, W_out), we prepend N=1.
+    """
+    if len(d.outputs) != 1:
+        return arr
+    out_spec = next(iter(d.outputs.values()))
+    if out_spec.shape is None:
+        return arr
+    expected_rank = len(out_spec.shape)
+    if arr.ndim == expected_rank:
+        return arr
+    if arr.ndim == expected_rank - 1:
+        return arr.reshape((1,) + arr.shape)
+    return arr  # Let `compare` flag the mismatch with a useful error.
+
+
+def _to_numpy(x) -> np.ndarray:
+    """Coerce reference output to a numpy array. Accepts torch.Tensor, numpy, list, scalar."""
+    if isinstance(x, np.ndarray):
+        return x
+    if hasattr(x, "detach") and hasattr(x, "cpu") and hasattr(x, "numpy"):
+        return x.detach().cpu().numpy()
+    if isinstance(x, (list, tuple)):
+        return np.asarray(x)
+    if isinstance(x, np.generic):
+        # numpy scalar (e.g. np.float32) — wrap in 1-element array to match the
+        # shape (1,) that SimdLoopDataset.unwrap_output returns.
+        return np.asarray([x])
+    raise TypeError(f"Cannot convert reference output of type {type(x)} to numpy")
+
+
+__all__ = ["DefaultEvaluator"]
