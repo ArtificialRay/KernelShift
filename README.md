@@ -1,15 +1,18 @@
 # KernelShift
 
+**Benchmarking Kernel Optimization Across Evolving Hardware**
+
 Project website: <https://cmu-l3.github.io/kernel-shift/>
 
 ![KernelShift overview](docs/figures/overview.png)
 
-A benchmark environment for LLM agents that write optimized AArch64 SIMD kernels (NEON, SVE,
-SVE2, SME2). Each task is a kernel with a reference implementation, workloads
-taken from real models, and an expert implementation to beat. The agent compiles,
-tests and profiles its kernel on the target machine through MCP tools. A kernel
-scores only if it is correct on every workload, and its score is the speedup over the
-expert implementation.
+KernelShift is a benchmarking pipeline and a set of environments for evaluating coding
+agents in kernel optimization across evolving CPU architectures (Arm Neon, SVE, SVE2 and
+SME2). Its agent-assisted, human-verified pipeline turns code repositories into benchmark
+tasks, and its environments let agents optimize kernels with feedback from the target
+hardware. Each task is a kernel with a reference implementation, workloads taken from real
+models, and an expert implementation to beat. A kernel scores only if it is correct on
+every workload, and its score is the speedup over the expert implementation.
 
 | Source | Kernels | Definitions | Evaluation set |
 |---|---|--:|--:|
@@ -61,7 +64,7 @@ $ python -m bench.cli bench --definition loop_001 --solution reference-scalar_lo
   ...
 ```
 
-Kernels run only on hardware that has their instructions: scalar and NEON code on
+Kernels run only on hardware that has their instructions: scalar and Neon code on
 any AArch64 machine, SVE on Graviton3, SVE2 on Graviton4, SME2 on Apple M4. An SVE
 kernel run on a Mac fails with `RUNTIME_ERROR ... SIGILL`.
 `python -m bench.cli list-definitions` and `list-solutions` show what there is to run.
